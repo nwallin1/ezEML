@@ -218,6 +218,8 @@ def data_table(filename=None, node_id=None, delimiter=None, quote_char=None):
                                     filename=filename,
                                     dt_element_name=names.DATATABLE,
                                     dt_node_id=dt_node_id))
+        elif next_page == PAGE_ATTRIBUTE_SELECT:
+        	return redirect(url_for(next_page,filename=filename,dt_node_id=dt_node_id,initial_upload=False))
         else:
             return redirect(url_for(next_page,
                                     filename=filename,
@@ -270,9 +272,396 @@ def data_table(filename=None, node_id=None, delimiter=None, quote_char=None):
         'data_table_online_url',
         'clone_attributes_general'
     ])
-    return render_template('data_table.html', title='Data Table', form=form,
-                           atts=atts, help=help, was_uploaded=was_uploaded)
+    return render_template('data_table.html', title='Data Table', form=form, atts=atts,
+                           help=help, was_uploaded=was_uploaded)
 
+@dt_bp.route('/data_table_initial_upload/<filename>/<node_id>', methods=['GET', 'POST'])
+def data_table_initial_upload(filename=None, node_id=None, delimiter=None, quote_char=None):
+    form = DataTableForm(filename=filename)
+    dt_node_id = node_id
+
+    # Process POST
+    if request.method == 'POST' and BTN_CANCEL in request.form:
+        url = url_for(PAGE_DATA_TABLE_SELECT, filename=filename)
+        return redirect(url)
+
+    if request.method == 'POST':
+
+        #next_page = PAGE_DATA_TABLE_INITIAL_UPLOAD_COLUMNS
+        #Default: Go To Columns Page
+        next_page = PAGE_ATTRIBUTE_SELECT
+
+        submit_type = None
+        if is_dirty_form(form):
+            submit_type = 'Save Changes'
+
+
+        if 'Attributes' in request.form:
+            next_page = PAGE_ATTRIBUTE_SELECT
+        elif 'Clone' in request.form:
+            next_page = PAGE_CLONE_ATTRIBUTES
+        elif 'Access' in request.form:
+            next_page = PAGE_ENTITY_ACCESS_SELECT
+        elif 'Methods' in request.form:
+            next_page = PAGE_ENTITY_METHOD_STEP_SELECT
+        elif 'Geographic' in request.form:
+            next_page = PAGE_ENTITY_GEOGRAPHIC_COVERAGE_SELECT
+        elif 'Temporal' in request.form:
+            next_page = PAGE_ENTITY_TEMPORAL_COVERAGE_SELECT
+        elif 'Taxonomic' in request.form:
+            next_page = PAGE_ENTITY_TAXONOMIC_COVERAGE_SELECT
+        elif BTN_HIDDEN_NEW in request.form:
+            next_page = PAGE_CREATE
+        elif BTN_HIDDEN_OPEN in request.form:
+            next_page = PAGE_OPEN
+        elif BTN_HIDDEN_CLOSE in request.form:
+            next_page = PAGE_CLOSE
+
+    if form.validate_on_submit():
+        eml_node = load_eml(filename=filename)
+
+        if submit_type == 'Save Changes':
+            dataset_node = eml_node.find_child(names.DATASET)
+            if not dataset_node:
+                dataset_node = Node(names.DATASET)
+
+            entity_name = form.entity_name.data
+            entity_description = form.entity_description.data
+            object_name = form.object_name.data
+            size = str(form.size.data) if form.size.data else ''
+            md5_hash = form.md5_hash.data
+            num_header_lines = str(form.num_header_lines.data) if form.num_header_lines.data else ''
+            record_delimiter = form.record_delimiter.data
+            quote_character = form.quote_character.data
+            attribute_orientation = form.attribute_orientation.data
+            field_delimiter = form.field_delimiter.data
+            case_sensitive = form.case_sensitive.data
+            number_of_records = str(form.number_of_records.data) if form.number_of_records.data else ''
+            online_url = form.online_url.data
+
+            dt_node = Node(names.DATATABLE, parent=dataset_node)
+
+            if not entity_name:
+                entity_name = ''
+
+            create_data_table(
+                dt_node,
+                entity_name,
+                entity_description,
+                object_name,
+                size,
+                md5_hash,
+                num_header_lines,
+                record_delimiter,
+                quote_character,
+                attribute_orientation,
+                field_delimiter,
+                case_sensitive,
+                number_of_records,
+                online_url)
+
+            if dt_node_id and len(dt_node_id) != 1:
+                old_dt_node = Node.get_node_instance(dt_node_id)
+                if old_dt_node:
+
+                    attribute_list_node = old_dt_node.find_child(names.ATTRIBUTELIST)
+                    if attribute_list_node:
+                        old_dt_node.remove_child(attribute_list_node)
+                        add_child(dt_node, attribute_list_node)
+
+                    old_distribution_node = old_dt_node.find_single_node_by_path([
+                        names.PHYSICAL,
+                        names.DISTRIBUTION
+
+                    ])
+                    if old_distribution_node:
+                        access_node = old_distribution_node.find_child(names.ACCESS)
+                        if access_node:
+                            distribution_node = dt_node.find_single_node_by_path([
+                                names.PHYSICAL,
+                                names.DISTRIBUTION
+                            ])
+                            old_distribution_node.remove_child(access_node)
+                            add_child(distribution_node, access_node)
+
+                    methods_node = old_dt_node.find_child(names.METHODS)
+                    if methods_node:
+                        old_dt_node.remove_child(methods_node)
+                        add_child(dt_node, methods_node)
+
+                    coverage_node = old_dt_node.find_child(names.COVERAGE)
+                    if coverage_node:
+                        old_dt_node.remove_child(coverage_node)
+                        add_child(dt_node, coverage_node)
+
+                    dataset_parent_node = old_dt_node.parent
+                    dataset_parent_node.replace_child(old_dt_node, dt_node)
+                    dt_node_id = dt_node.id
+                else:
+                    msg = f"No node found in the node store with node id {dt_node_id}"
+                    raise Exception(msg)
+            else:
+                add_child(dataset_node, dt_node)
+                dt_node_id = dt_node.id
+
+            save_both_formats(filename=filename, eml_node=eml_node)
+ 
+        if next_page in [
+            PAGE_ENTITY_ACCESS_SELECT,
+            PAGE_ENTITY_METHOD_STEP_SELECT,
+            PAGE_ENTITY_GEOGRAPHIC_COVERAGE_SELECT,
+            PAGE_ENTITY_TEMPORAL_COVERAGE_SELECT,
+            PAGE_ENTITY_TAXONOMIC_COVERAGE_SELECT,
+        ]:
+            return redirect(url_for(next_page,
+                                    filename=filename,
+                                    dt_element_name=names.DATATABLE,
+                                    dt_node_id=dt_node_id))
+		
+		#elif next_page == PAGE_DATA_TABLE_INITIAL_UPLOAD_COLUMNS:
+        	#return second page in the upload process
+        	#return redirect(url_for(next_page, filename=filename, node_id=dt_node_id,delimiter=delimiter,quote_char=quote_char))
+        
+        elif next_page == PAGE_ATTRIBUTE_SELECT:
+        	return redirect(url_for(next_page, filename=filename, dt_node_id=dt_node_id, initial_upload=True))
+        else:
+            return redirect(url_for(next_page,
+                                    filename=filename,
+                                    dt_node_id=dt_node_id))
+                                        
+    # Process GET
+    was_uploaded = False
+    if dt_node_id == '1':
+        form.init_md5()
+    else:
+        eml_node = load_eml(filename=filename)
+        if eml_node:
+            dataset_node = eml_node.find_child(names.DATASET)
+            if dataset_node:
+                dt_nodes = dataset_node.find_all_children(names.DATATABLE)
+                if dt_nodes:
+                    for dt_node in dt_nodes:
+                        if dt_node_id == dt_node.id:
+                            att_list = list_attributes(dt_node, 'data_table', dt_node_id)
+                            if att_list:
+                                atts = compose_atts(att_list)
+                            populate_data_table_form(form, dt_node)
+
+                            object_name_node = dt_node.find_single_node_by_path([names.PHYSICAL, names.OBJECTNAME])
+                            if object_name_node:
+                                object_name = object_name_node.content
+                                if object_name:
+                                    was_uploaded = user_data.data_table_was_uploaded(object_name)
+
+        else:
+            flash('eml_node is None')
+
+    views.set_current_page('data_table')
+    help = views.get_helps([
+        'data_table',
+        'data_table_name',
+        'data_table_description',
+        'data_table_object_name',
+        'data_table_attribute_orientation',
+        'data_table_field_delimiter',
+        'data_table_size',
+        'data_table_checksum',
+        'data_table_header_lines',
+        'data_table_record_delimiter',
+        'data_table_quote_character',
+        'data_table_case_sensitive',
+        'data_table_number_of_records',
+        'data_table_online_url'#,
+        #'clone_attributes_general'
+    ])
+    
+    #return first page in the upload process
+    return render_template('data_table_initial_upload.html', title='Data Table Upload', form=form,
+    	help=help,was_uploaded=was_uploaded)
+    	
+@dt_bp.route('/data_table_initial_upload_columns/<filename>/<node_id>', methods=['GET', 'POST'])
+def data_table_initial_upload_columns(filename=None, node_id=None, delimiter=None, quote_char=None):
+
+	form = DataTableForm(filename=filename)
+	dt_node_id = node_id
+
+	# Process POST
+	if request.method == 'POST' and BTN_CANCEL in request.form:
+		url = url_for(PAGE_DATA_TABLE_SELECT, filename=filename)
+		return redirect(url)
+	
+	if request.method == 'POST':
+		next_page = PAGE_DATA_TABLE
+
+		submit_type = None
+		if is_dirty_form(form):
+			submit_type = 'Save Changes'
+
+		if 'Attributes' in request.form:
+			next_page = PAGE_ATTRIBUTE_SELECT
+		elif 'Clone' in request.form:
+			next_page = PAGE_CLONE_ATTRIBUTES
+		elif 'Access' in request.form:
+			next_page = PAGE_ENTITY_ACCESS_SELECT
+		elif 'Methods' in request.form:
+			next_page = PAGE_ENTITY_METHOD_STEP_SELECT
+		elif 'Geographic' in request.form:
+			next_page = PAGE_ENTITY_GEOGRAPHIC_COVERAGE_SELECT
+		elif 'Temporal' in request.form:
+			next_page = PAGE_ENTITY_TEMPORAL_COVERAGE_SELECT
+		elif 'Taxonomic' in request.form:
+			next_page = PAGE_ENTITY_TAXONOMIC_COVERAGE_SELECT
+		elif BTN_HIDDEN_NEW in request.form:
+			next_page = PAGE_CREATE
+		elif BTN_HIDDEN_OPEN in request.form:
+			next_page = PAGE_OPEN
+		elif BTN_HIDDEN_CLOSE in request.form:
+			next_page = PAGE_CLOSE
+
+	if form.validate_on_submit():
+		eml_node = load_eml(filename=filename)
+
+		if submit_type == 'Save Changes':
+		    dataset_node = eml_node.find_child(names.DATASET)
+		    if not dataset_node:
+		        dataset_node = Node(names.DATASET)
+
+		    entity_name = form.entity_name.data
+		    entity_description = form.entity_description.data
+		    object_name = form.object_name.data
+		    size = str(form.size.data) if form.size.data else ''
+		    md5_hash = form.md5_hash.data
+		    num_header_lines = str(form.num_header_lines.data) if form.num_header_lines.data else ''
+		    record_delimiter = form.record_delimiter.data
+		    quote_character = form.quote_character.data
+		    attribute_orientation = form.attribute_orientation.data
+		    field_delimiter = form.field_delimiter.data
+		    case_sensitive = form.case_sensitive.data
+		    number_of_records = str(form.number_of_records.data) if form.number_of_records.data else ''
+		    online_url = form.online_url.data
+
+		    dt_node = Node(names.DATATABLE, parent=dataset_node)
+
+		    if not entity_name:
+		        entity_name = ''
+
+		    create_data_table(
+		        dt_node,
+		        entity_name,
+		        entity_description,
+		        object_name,
+		        size,
+		        md5_hash,
+		        num_header_lines,
+		        record_delimiter,
+		        quote_character,
+		        attribute_orientation,
+		        field_delimiter,
+		        case_sensitive,
+		        number_of_records,
+		        online_url)
+
+		    if dt_node_id and len(dt_node_id) != 1:
+		        old_dt_node = Node.get_node_instance(dt_node_id)
+		        if old_dt_node:
+
+		            attribute_list_node = old_dt_node.find_child(names.ATTRIBUTELIST)
+		            if attribute_list_node:
+		                old_dt_node.remove_child(attribute_list_node)
+		                add_child(dt_node, attribute_list_node)
+
+		            old_distribution_node = old_dt_node.find_single_node_by_path([
+		                names.PHYSICAL,
+		                names.DISTRIBUTION
+
+		            ])
+		            if old_distribution_node:
+		                access_node = old_distribution_node.find_child(names.ACCESS)
+		                if access_node:
+		                    distribution_node = dt_node.find_single_node_by_path([
+		                        names.PHYSICAL,
+		                        names.DISTRIBUTION
+		                    ])
+		                    old_distribution_node.remove_child(access_node)
+		                    add_child(distribution_node, access_node)
+
+		            methods_node = old_dt_node.find_child(names.METHODS)
+		            if methods_node:
+		                old_dt_node.remove_child(methods_node)
+		                add_child(dt_node, methods_node)
+
+		            coverage_node = old_dt_node.find_child(names.COVERAGE)
+		            if coverage_node:
+		                old_dt_node.remove_child(coverage_node)
+		                add_child(dt_node, coverage_node)
+
+		            dataset_parent_node = old_dt_node.parent
+		            dataset_parent_node.replace_child(old_dt_node, dt_node)
+		            dt_node_id = dt_node.id
+		        else:
+		            msg = f"No node found in the node store with node id {dt_node_id}"
+		            raise Exception(msg)
+		    else:
+		        add_child(dataset_node, dt_node)
+		        dt_node_id = dt_node.id
+
+		    save_both_formats(filename=filename, eml_node=eml_node)
+
+		if next_page in [
+		    PAGE_ENTITY_ACCESS_SELECT,
+		    PAGE_ENTITY_METHOD_STEP_SELECT,
+		    PAGE_ENTITY_GEOGRAPHIC_COVERAGE_SELECT,
+		    PAGE_ENTITY_TEMPORAL_COVERAGE_SELECT,
+		    PAGE_ENTITY_TAXONOMIC_COVERAGE_SELECT,
+		]:
+		    return redirect(url_for(next_page,
+		                            filename=filename,
+		                            dt_element_name=names.DATATABLE,
+		                            dt_node_id=dt_node_id))
+		elif next_page == PAGE_DATA_TABLE:
+			#return second page in the upload process
+			return redirect(url_for(next_page, filename=filename, node_id=dt_node_id,delimiter=delimiter,quote_char=quote_char))
+		else:
+		    return redirect(url_for(next_page,
+		                            filename=filename,
+		                            dt_node_id=dt_node_id))
+
+	# Process GET
+	atts = 'No data table attributes have been added'
+
+	was_uploaded = False
+	if dt_node_id == '1':
+		form.init_md5()
+	else:
+		eml_node = load_eml(filename=filename)
+		if eml_node:
+		    dataset_node = eml_node.find_child(names.DATASET)
+		    if dataset_node:
+		        dt_nodes = dataset_node.find_all_children(names.DATATABLE)
+		        if dt_nodes:
+		            for dt_node in dt_nodes:
+		                if dt_node_id == dt_node.id:
+		                    att_list = list_attributes(dt_node, 'data_table', dt_node_id)
+		                    if att_list:
+		                        atts = compose_atts(att_list)
+		                    populate_data_table_form(form, dt_node)
+
+		                    object_name_node = dt_node.find_single_node_by_path([names.PHYSICAL, names.OBJECTNAME])
+		                    if object_name_node:
+		                        object_name = object_name_node.content
+		                        if object_name:
+		                            was_uploaded = user_data.data_table_was_uploaded(object_name)
+
+		else:
+		    flash('eml_node is None')
+
+	views.set_current_page('data_table')
+	help = views.get_helps([
+		'clone_attributes_general'
+	])
+
+	return render_template('data_table_initial_upload_columns.html', title='Data Table Upload Columns', form=form,atts=atts,
+		help=help,was_uploaded=was_uploaded)
 
 def compose_codes():
     code_list = list_codes_and_definitions()
@@ -360,28 +749,111 @@ def populate_data_table_form(form: DataTableForm, node: Node):
     form.md5.data = form_md5(form)
 
 
+#Return correct rendered template to be inserted into the modal
+#This function is usually called from the attribute_select_initial_upload.html file, from the javascript function attribute_modal_load
+@dt_bp.route('/attribute_modal_load/<filename>/<dt_node_id>/<node_id>/<load_codes>', methods=['GET'])
+@dt_bp.route('/attribute_modal_load/<filename>/<dt_node_id>/<node_id>', defaults={'load_codes': False}, methods=['GET'])
+def attribute_modal_load(filename=None,dt_node_id=None,node_id=None,load_codes='False'):
+	
+	if Config.FLASH_DEBUG:
+		flash(f'val:{val}')
+
+	attribute_node = Node.get_node_instance(node_id)
+
+	if Config.FLASH_DEBUG:
+		if not attribute_node:
+			flash('attribute_node not found')
+	mscale = mscale_from_attribute(attribute_node)
+
+	if Config.FLASH_DEBUG:
+		flash(f'val:{val} node_id:{node_id} mscale:{mscale}')
+
+	#Call proper function that returns rendered HTML
+	import pdb
+	pdb.set_trace()
+	
+	#All codes related templates are handled here
+	if load_codes != 'False':
+		att_node_id = node_id
+		cd_node = None
+		if att_node_id != '1':
+			att_node = Node.get_node_instance(att_node_id)
+			cd_node = code_definition_from_attribute(att_node)  # FIXME - What's going on here??? Only one node returned...
+
+		if not cd_node:
+			cd_node = Node(names.CODEDEFINITION, parent=None)
+
+		cd_node_id = cd_node.id
+		#HTML For code_definition_select page. This is triggered from the categorical page,
+		if load_codes == 'True':
+			new_page = code_definition_select(filename, dt_node_id, att_node_id, cd_node_id, mscale)
+
+		else:
+			#this is an action being taken from the codes page, it is handled here
+			new_page = code_definition_select_post_modal(filename, dt_node_id, att_node_id, cd_node_id, mscale, load_codes)
+
+	elif mscale == VariableType.DATETIME.name:
+		new_page = attribute_datetime(filename,dt_node_id,node_id)
+	elif mscale == VariableType.NUMERICAL.name:
+		new_page = attribute_numerical(filename, dt_node_id, node_id, mscale)
+	elif mscale == VariableType.CATEGORICAL.name:
+		new_page = attribute_categorical(filename, dt_node_id, node_id, mscale)
+	elif mscale == VariableType.TEXT.name:
+		new_page = attribute_text(filename,dt_node_id,node_id,mscale)	
+
+	return new_page
+
+@dt_bp.route('/attribute_modal_change_mscale/<filename>/<dt_node_id>/<att_node_id>/<old_mscale>/<new_mscale>', methods=['POST'])
+def attribute_modal_change_mscale(filename, dt_node_id, att_node_id, old_mscale, new_mscale):	
+	# Save current column information
+	if old_mscale == VariableType.DATETIME.name:
+		new_att_node_id = attribute_dateTime_save(filename,dt_node_id,att_node_id)
+	elif old_mscale == VariableType.NUMERICAL.name:
+		new_att_node_id = attribute_numerical_save(filename, dt_node_id, att_node_id, old_mscale)
+	elif old_mscale == VariableType.CATEGORICAL.name or old_mscale == VariableType.TEXT.name:
+		new_att_node_id = attribute_categorical_save(filename, dt_node_id, att_node_id, old_mscale)
+
+	eml_node = load_eml(filename=filename)
+
+	att_node = Node.get_node_instance(new_att_node_id)
+
+	#Change mscale and save changes
+	change_measurement_scale(att_node, old_mscale, new_mscale)
+	save_both_formats(filename=filename, eml_node=eml_node)
+
+	#Return new_att_node_id to JS
+	#attribute_modal_load will be called with the new_att_node_id as a GET request
+	#At this point in the code, it is a POST request, so calling attribute_modal_load
+	# won't work as expected
+
+	return new_att_node_id
+
+	#Call attribute_modal_load on changed column to get new template
+	#return attribute_modal_load(filename,dt_node_id,new_att_node_id)
+
 # <dt_node_id> identifies the dataTable node that this attribute
 # is a part of (within its attributeList)
 #
-@dt_bp.route('/attribute_select/<filename>/<dt_node_id>', methods=['GET', 'POST'])
-def attribute_select(filename=None, dt_node_id=None):
-    form = AttributeSelectForm(filename=filename)
-    # dt_node_id = request.args.get('dt_node_id')  # alternate way to get the id
+@dt_bp.route('/attribute_select/<filename>/<dt_node_id>/<initial_upload>', methods=['GET', 'POST'])
+def attribute_select(filename=None, dt_node_id=None, initial_upload=False):
+	
+	form = AttributeSelectForm(filename=filename)
+	# dt_node_id = request.args.get('dt_node_id')  # alternate way to get the id
 
-    # Process POST
-    if request.method == 'POST':
-        form_value = request.form
-        form_dict = form_value.to_dict(flat=False)
-        url = attribute_select_post(filename, form, form_dict,
-                                    'POST', PAGE_ATTRIBUTE_SELECT, PAGE_DATA_TABLE,
-                                    dt_node_id=dt_node_id)
-        return redirect(url)
+	# Process POST
+	if request.method == 'POST':
+		form_value = request.form
+		form_dict = form_value.to_dict(flat=False)
+		url = attribute_select_post(filename, form, form_dict,
+		                            'POST', PAGE_ATTRIBUTE_SELECT, PAGE_DATA_TABLE,
+		                            dt_node_id=dt_node_id)
+		return redirect(url)
 
-    # Process GET
-    return attribute_select_get(filename=filename, form=form, dt_node_id=dt_node_id)
+	# Process GET    
+	return attribute_select_get(filename=filename, form=form, dt_node_id=dt_node_id, initial_upload=initial_upload)
 
 
-def attribute_select_get(filename=None, form=None, dt_node_id=None):
+def attribute_select_get(filename=None, form=None, dt_node_id=None, initial_upload=False):
     # Process GET
     att_list = []
     title = 'Attributes'
@@ -420,6 +892,19 @@ def attribute_select_get(filename=None, form=None, dt_node_id=None):
 
     views.set_current_page('data_table')
     help = [views.get_help('measurement_scale')]
+    
+    if(initial_upload == 'True'):
+    	#Return Initial Upload Template
+    	return render_template('attribute_select_initial_upload.html',
+    							filename=filename,
+    							dt_node_id=dt_node_id,
+    							title=title,
+    							entity_name=entity_name,
+    							att_list=att_list,
+    							was_uploaded=was_uploaded,
+    							form=form,
+    							help=help)
+    #Return Default Template
     return render_template('attribute_select.html',
                            title=title,
                            entity_name=entity_name,
@@ -593,9 +1078,10 @@ def attribute_select_post(filename=None, form=None, form_dict=None,
     if form_dict:
         for key in form_dict:
             val = form_dict[key][0]  # value is the first list element
+            
             if Config.FLASH_DEBUG:
                 flash(f'val:{val}')
-            if val.startswith(BTN_BACK):
+            if val.startswith(BTN_BACK) or val.startswith(BTN_SAVE):
                 new_page = back_page
             elif val.startswith(BTN_EDIT):
                 node_id = key
@@ -702,148 +1188,236 @@ def attribute_select_post(filename=None, form=None, form_dict=None,
 
 @dt_bp.route('/attribute_dateTime/<filename>/<dt_node_id>/<node_id>', methods=['GET', 'POST'])
 def attribute_dateTime(filename=None, dt_node_id=None, node_id=None):
+	form = AttributeDateTimeForm(filename=filename, node_id=node_id)
+	att_node_id = node_id
+
+	# Determine POST type
+	if request.method == 'POST' and form.validate_on_submit():
+
+		if is_dirty_form(form):
+			submit_type = 'Save Changes'
+			# flash(f"is_dirty_form: True")
+		else:
+			submit_type = 'Back'
+			# flash(f"is_dirty_form: False")
+
+		# Go back to data table or go to the appropriate measurement scale page
+		if BTN_DONE in request.form:
+			next_page = PAGE_ATTRIBUTE_SELECT
+		elif BTN_HIDDEN_NEW in request.form:
+			next_page = PAGE_CREATE
+		elif BTN_HIDDEN_OPEN in request.form:
+			next_page = PAGE_OPEN
+		elif BTN_HIDDEN_CLOSE in request.form:
+			next_page = PAGE_CLOSE
+
+		if submit_type == 'Save Changes':
+			dt_node = None
+			attribute_list_node = None
+			eml_node = load_eml(filename=filename)
+			dataset_node = eml_node.find_child(names.DATASET)
+			if not dataset_node:
+			    dataset_node = Node(names.DATASET, parent=eml_node)
+			else:
+			    data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
+			    if data_table_nodes:
+			        for data_table_node in data_table_nodes:
+			            if data_table_node.id == dt_node_id:
+			                dt_node = data_table_node
+			                break
+
+			if not dt_node:
+			    dt_node = Node(names.DATATABLE, parent=dataset_node)
+			    add_child(dataset_node, dt_node)
+
+			attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+			if not attribute_list_node:
+			    attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
+			    add_child(dt_node, attribute_list_node)
+
+			attribute_name = form.attribute_name.data
+			attribute_label = form.attribute_label.data
+			attribute_definition = form.attribute_definition.data
+			storage_type = form.storage_type.data
+			storage_type_system = form.storage_type_system.data
+			format_string = form.format_string.data
+			datetime_precision = form.datetime_precision.data
+			bounds_minimum = form.bounds_minimum.data
+			bounds_minimum_exclusive = form.bounds_minimum_exclusive.data
+			bounds_maximum = form.bounds_maximum.data
+			bounds_maximum_exclusive = form.bounds_maximum_exclusive.data
+
+			code_dict = {}
+
+			code_1 = form.code_1.data
+			code_explanation_1 = form.code_explanation_1.data
+			if code_1:
+			    code_dict[code_1] = code_explanation_1
+
+			code_2 = form.code_2.data
+			code_explanation_2 = form.code_explanation_2.data
+			if code_2:
+			    code_dict[code_2] = code_explanation_2
+
+			code_3 = form.code_3.data
+			code_explanation_3 = form.code_explanation_3.data
+			if code_3:
+			    code_dict[code_3] = code_explanation_3
+
+			att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
+
+			create_datetime_attribute(
+			    att_node,
+			    attribute_name,
+			    attribute_label,
+			    attribute_definition,
+			    storage_type,
+			    storage_type_system,
+			    format_string,
+			    datetime_precision,
+			    bounds_minimum,
+			    bounds_minimum_exclusive,
+			    bounds_maximum,
+			    bounds_maximum_exclusive,
+			    code_dict)
+
+			if node_id and len(node_id) != 1:
+			    old_att_node = Node.get_node_instance(att_node_id)
+			    if old_att_node:
+			        att_parent_node = old_att_node.parent
+			        att_parent_node.replace_child(old_att_node, att_node)
+			    else:
+			        msg = f"No node found in the node store with node id {node_id}"
+			        raise Exception(msg)
+			else:
+			    add_child(attribute_list_node, att_node)
+
+			save_both_formats(filename=filename, eml_node=eml_node)
+			att_node_id = att_node.id
+			
+		"""
+		url = url_for(next_page, filename=filename,
+					  dt_node_id=dt_node_id, node_id=att_node_id)
+		"""
+		#return redirect(url)
+		return redirect(url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, initial_upload=True))
+
+	# Process GET
+	if node_id == '1':
+		form.init_md5()
+		# form.md5.data = form_md5(form)
+	else:
+		eml_node = load_eml(filename=filename)
+		dataset_node = eml_node.find_child(names.DATASET)
+		if dataset_node:
+		    dt_nodes = dataset_node.find_all_children(names.DATATABLE)
+		    if dt_nodes:
+		        for dt_node in dt_nodes:
+		            if dt_node_id == dt_node.id:
+		                attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+		                if attribute_list_node:
+		                    att_nodes = attribute_list_node.find_all_children(names.ATTRIBUTE)
+		                    if att_nodes:
+		                        for att_node in att_nodes:
+		                            if node_id == att_node.id:
+		                                populate_attribute_datetime_form(form, att_node)
+		                                break
+
+	views.set_current_page('data_table')
+	help = views.get_helps(['attribute_name', 'attribute_definition', 'attribute_label', 'attribute_storage_type',
+		              'attribute_datetime_precision', 'attribute_datetime_format'])
+
+	action = f"/eml/attribute_dateTime/{filename}/{dt_node_id}/{node_id}/{mscale}"
+	return render_template('attribute_datetime_modal.html', title='Attribute', form=form, att_node_id = att_node_id, action=action, help=help)
+
+#Function Only Saves Current Values. No redirection.
+def attribute_dateTime_save(filename=None, dt_node_id=None, node_id=None):
     form = AttributeDateTimeForm(filename=filename, node_id=node_id)
     att_node_id = node_id
 
-    if request.method == 'POST' and BTN_CANCEL in request.form:
-        url = url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, node_id=att_node_id)
-        return redirect(url)
-
-    # Determine POST type
-    if request.method == 'POST' and form.validate_on_submit():
-
-        if is_dirty_form(form):
-            submit_type = 'Save Changes'
-            # flash(f"is_dirty_form: True")
-        else:
-            submit_type = 'Back'
-            # flash(f"is_dirty_form: False")
-
-        # Go back to data table or go to the appropriate measurement scale page
-        if BTN_DONE in request.form:
-            next_page = PAGE_ATTRIBUTE_SELECT
-        elif BTN_HIDDEN_NEW in request.form:
-            next_page = PAGE_CREATE
-        elif BTN_HIDDEN_OPEN in request.form:
-            next_page = PAGE_OPEN
-        elif BTN_HIDDEN_CLOSE in request.form:
-            next_page = PAGE_CLOSE
-
-        if submit_type == 'Save Changes':
-            dt_node = None
-            attribute_list_node = None
-            eml_node = load_eml(filename=filename)
-            dataset_node = eml_node.find_child(names.DATASET)
-            if not dataset_node:
-                dataset_node = Node(names.DATASET, parent=eml_node)
-            else:
-                data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
-                if data_table_nodes:
-                    for data_table_node in data_table_nodes:
-                        if data_table_node.id == dt_node_id:
-                            dt_node = data_table_node
-                            break
-
-            if not dt_node:
-                dt_node = Node(names.DATATABLE, parent=dataset_node)
-                add_child(dataset_node, dt_node)
-
-            attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
-            if not attribute_list_node:
-                attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
-                add_child(dt_node, attribute_list_node)
-
-            attribute_name = form.attribute_name.data
-            attribute_label = form.attribute_label.data
-            attribute_definition = form.attribute_definition.data
-            storage_type = form.storage_type.data
-            storage_type_system = form.storage_type_system.data
-            format_string = form.format_string.data
-            datetime_precision = form.datetime_precision.data
-            bounds_minimum = form.bounds_minimum.data
-            bounds_minimum_exclusive = form.bounds_minimum_exclusive.data
-            bounds_maximum = form.bounds_maximum.data
-            bounds_maximum_exclusive = form.bounds_maximum_exclusive.data
-
-            code_dict = {}
-
-            code_1 = form.code_1.data
-            code_explanation_1 = form.code_explanation_1.data
-            if code_1:
-                code_dict[code_1] = code_explanation_1
-
-            code_2 = form.code_2.data
-            code_explanation_2 = form.code_explanation_2.data
-            if code_2:
-                code_dict[code_2] = code_explanation_2
-
-            code_3 = form.code_3.data
-            code_explanation_3 = form.code_explanation_3.data
-            if code_3:
-                code_dict[code_3] = code_explanation_3
-
-            att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
-
-            create_datetime_attribute(
-                att_node,
-                attribute_name,
-                attribute_label,
-                attribute_definition,
-                storage_type,
-                storage_type_system,
-                format_string,
-                datetime_precision,
-                bounds_minimum,
-                bounds_minimum_exclusive,
-                bounds_maximum,
-                bounds_maximum_exclusive,
-                code_dict)
-
-            if node_id and len(node_id) != 1:
-                old_att_node = Node.get_node_instance(att_node_id)
-                if old_att_node:
-                    att_parent_node = old_att_node.parent
-                    att_parent_node.replace_child(old_att_node, att_node)
-                else:
-                    msg = f"No node found in the node store with node id {node_id}"
-                    raise Exception(msg)
-            else:
-                add_child(attribute_list_node, att_node)
-
-            save_both_formats(filename=filename, eml_node=eml_node)
-            att_node_id = att_node.id
-
-        url = url_for(next_page, filename=filename,
-                      dt_node_id=dt_node_id, node_id=att_node_id)
-
-        return redirect(url)
-
-    # Process GET
-    if node_id == '1':
-        form.init_md5()
-        # form.md5.data = form_md5(form)
-    else:
+    if is_dirty_form(form):
+        dt_node = None
+        attribute_list_node = None
         eml_node = load_eml(filename=filename)
         dataset_node = eml_node.find_child(names.DATASET)
-        if dataset_node:
-            dt_nodes = dataset_node.find_all_children(names.DATATABLE)
-            if dt_nodes:
-                for dt_node in dt_nodes:
-                    if dt_node_id == dt_node.id:
-                        attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
-                        if attribute_list_node:
-                            att_nodes = attribute_list_node.find_all_children(names.ATTRIBUTE)
-                            if att_nodes:
-                                for att_node in att_nodes:
-                                    if node_id == att_node.id:
-                                        populate_attribute_datetime_form(form, att_node)
-                                        break
+        if not dataset_node:
+            dataset_node = Node(names.DATASET, parent=eml_node)
+        else:
+            data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
+            if data_table_nodes:
+                for data_table_node in data_table_nodes:
+                    if data_table_node.id == dt_node_id:
+                        dt_node = data_table_node
+                        break
+        if not dt_node:
+            dt_node = Node(names.DATATABLE, parent=dataset_node)
+            add_child(dataset_node, dt_node)
 
-    views.set_current_page('data_table')
-    help = views.get_helps(['attribute_name', 'attribute_definition', 'attribute_label', 'attribute_storage_type',
-                      'attribute_datetime_precision', 'attribute_datetime_format'])
-    return render_template('attribute_datetime.html', title='Attribute', form=form, help=help)
+        attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+        if not attribute_list_node:
+            attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
+            add_child(dt_node, attribute_list_node)
 
+        attribute_name = form.attribute_name.data
+        attribute_label = form.attribute_label.data
+        attribute_definition = form.attribute_definition.data
+        storage_type = form.storage_type.data
+        storage_type_system = form.storage_type_system.data
+        format_string = form.format_string.data
+        datetime_precision = form.datetime_precision.data
+        bounds_minimum = form.bounds_minimum.data
+        bounds_minimum_exclusive = form.bounds_minimum_exclusive.data
+        bounds_maximum = form.bounds_maximum.data
+        bounds_maximum_exclusive = form.bounds_maximum_exclusive.data
+
+        code_dict = {}
+
+        code_1 = form.code_1.data
+        code_explanation_1 = form.code_explanation_1.data
+        if code_1:
+            code_dict[code_1] = code_explanation_1
+
+        code_2 = form.code_2.data
+        code_explanation_2 = form.code_explanation_2.data
+        if code_2:
+            code_dict[code_2] = code_explanation_2
+
+        code_3 = form.code_3.data
+        code_explanation_3 = form.code_explanation_3.data
+        if code_3:
+            code_dict[code_3] = code_explanation_3
+
+        att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
+
+        create_datetime_attribute(
+            att_node,
+            attribute_name,
+            attribute_label,
+            attribute_definition,
+            storage_type,
+            storage_type_system,
+            format_string,
+            datetime_precision,
+            bounds_minimum,
+            bounds_minimum_exclusive,
+            bounds_maximum,
+            bounds_maximum_exclusive,
+            code_dict)
+
+        if node_id and len(node_id) != 1:
+            old_att_node = Node.get_node_instance(att_node_id)
+            if old_att_node:
+                att_parent_node = old_att_node.parent
+                att_parent_node.replace_child(old_att_node, att_node)
+            else:
+                msg = f"No node found in the node store with node id {node_id}"
+                raise Exception(msg)
+        else:
+            add_child(attribute_list_node, att_node)
+
+        save_both_formats(filename=filename, eml_node=eml_node)
+        att_node_id = att_node.id
+    return att_node_id
 
 def populate_attribute_datetime_form(form: AttributeDateTimeForm, node: Node):
     att_node = node
@@ -933,175 +1507,275 @@ def populate_attribute_datetime_form(form: AttributeDateTimeForm, node: Node):
 
 @dt_bp.route('/attribute_numerical/<filename>/<dt_node_id>/<node_id>/<mscale>', methods=['GET', 'POST'])
 def attribute_numerical(filename=None, dt_node_id=None, node_id=None, mscale=None):
-    form = AttributeIntervalRatioForm(filename=filename, node_id=node_id)
-    att_node_id = node_id
+	form = AttributeIntervalRatioForm(filename=filename, node_id=node_id)
+	att_node_id = node_id
 
-    if request.method == 'POST' and BTN_CANCEL in request.form:
-        url = url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, node_id=att_node_id)
-        return redirect(url)
+	# Determine POST type
+	# if request.method == 'POST' and form.validate_on_submit():
+	if request.method == 'POST':
 
-    # Determine POST type
-    # if request.method == 'POST' and form.validate_on_submit():
-    if request.method == 'POST':
+		if is_dirty_form(form):
+		    submit_type = 'Save Changes'
+		    # flash(f"is_dirty_form: True")
+		else:
+		    submit_type = 'Back'
+		    # flash(f"is_dirty_form: False")
 
-        if is_dirty_form(form):
-            submit_type = 'Save Changes'
-            # flash(f"is_dirty_form: True")
-        else:
-            submit_type = 'Back'
-            # flash(f"is_dirty_form: False")
+		# Go back to data table or go to the appropriate measurement scale page
+		if BTN_DONE in request.form:  # FIXME
+		    next_page = PAGE_ATTRIBUTE_SELECT
+		elif BTN_HIDDEN_NEW in request.form:
+		    next_page = PAGE_CREATE
+		elif BTN_HIDDEN_OPEN in request.form:
+		    next_page = PAGE_OPEN
+		elif BTN_HIDDEN_CLOSE in request.form:
+		    next_page = PAGE_CLOSE
 
-        # Go back to data table or go to the appropriate measurement scale page
-        if BTN_DONE in request.form:  # FIXME
-            next_page = PAGE_ATTRIBUTE_SELECT
-        elif BTN_HIDDEN_NEW in request.form:
-            next_page = PAGE_CREATE
-        elif BTN_HIDDEN_OPEN in request.form:
-            next_page = PAGE_OPEN
-        elif BTN_HIDDEN_CLOSE in request.form:
-            next_page = PAGE_CLOSE
+		if submit_type == 'Save Changes':
+		    dt_node = None
+		    attribute_list_node = None
+		    eml_node = load_eml(filename=filename)
+		    dataset_node = eml_node.find_child(names.DATASET)
+		    if not dataset_node:
+		        dataset_node = Node(names.DATASET, parent=eml_node)
+		    else:
+		        data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
+		        if data_table_nodes:
+		            for data_table_node in data_table_nodes:
+		                if data_table_node.id == dt_node_id:
+		                    dt_node = data_table_node
+		                    break
 
-        if submit_type == 'Save Changes':
-            dt_node = None
-            attribute_list_node = None
-            eml_node = load_eml(filename=filename)
-            dataset_node = eml_node.find_child(names.DATASET)
-            if not dataset_node:
-                dataset_node = Node(names.DATASET, parent=eml_node)
-            else:
-                data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
-                if data_table_nodes:
-                    for data_table_node in data_table_nodes:
-                        if data_table_node.id == dt_node_id:
-                            dt_node = data_table_node
-                            break
+		    if not dt_node:
+		        dt_node = Node(names.DATATABLE, parent=dataset_node)
+		        add_child(dataset_node, dt_node)
 
-            if not dt_node:
-                dt_node = Node(names.DATATABLE, parent=dataset_node)
-                add_child(dataset_node, dt_node)
+		    attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+		    if not attribute_list_node:
+		        attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
+		        add_child(dt_node, attribute_list_node)
 
-            attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
-            if not attribute_list_node:
-                attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
-                add_child(dt_node, attribute_list_node)
+		    # mscale_choice = form.mscale_choice.data
+		    attribute_name = form.attribute_name.data
+		    attribute_label = form.attribute_label.data
+		    attribute_definition = form.attribute_definition.data
+		    storage_type = form.storage_type.data
+		    storage_type_system = form.storage_type_system.data
+		    standard_unit = form.standard_unit.data
+		    custom_unit = form.custom_unit.data
+		    custom_unit_definition = form.custom_unit_description.data
+		    precision = form.precision.data
+		    number_type = form.number_type.data
+		    bounds_minimum = form.bounds_minimum.data
+		    bounds_minimum_exclusive = form.bounds_minimum_exclusive.data
+		    bounds_maximum = form.bounds_maximum.data
+		    bounds_maximum_exclusive = form.bounds_maximum_exclusive.data
 
-            # mscale_choice = form.mscale_choice.data
-            attribute_name = form.attribute_name.data
-            attribute_label = form.attribute_label.data
-            attribute_definition = form.attribute_definition.data
-            storage_type = form.storage_type.data
-            storage_type_system = form.storage_type_system.data
-            standard_unit = form.standard_unit.data
-            custom_unit = form.custom_unit.data
-            custom_unit_definition = form.custom_unit_description.data
-            precision = form.precision.data
-            number_type = form.number_type.data
-            bounds_minimum = form.bounds_minimum.data
-            bounds_minimum_exclusive = form.bounds_minimum_exclusive.data
-            bounds_maximum = form.bounds_maximum.data
-            bounds_maximum_exclusive = form.bounds_maximum_exclusive.data
+		    code_dict = {}
 
-            code_dict = {}
+		    code_1 = form.code_1.data
+		    code_explanation_1 = form.code_explanation_1.data
+		    if code_1:
+		        code_dict[code_1] = code_explanation_1
 
-            code_1 = form.code_1.data
-            code_explanation_1 = form.code_explanation_1.data
-            if code_1:
-                code_dict[code_1] = code_explanation_1
+		    code_2 = form.code_2.data
+		    code_explanation_2 = form.code_explanation_2.data
+		    if code_2:
+		        code_dict[code_2] = code_explanation_2
 
-            code_2 = form.code_2.data
-            code_explanation_2 = form.code_explanation_2.data
-            if code_2:
-                code_dict[code_2] = code_explanation_2
+		    code_3 = form.code_3.data
+		    code_explanation_3 = form.code_explanation_3.data
+		    if code_3:
+		        code_dict[code_3] = code_explanation_3
 
-            code_3 = form.code_3.data
-            code_explanation_3 = form.code_explanation_3.data
-            if code_3:
-                code_dict[code_3] = code_explanation_3
+		    att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
 
-            att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
+		    create_numerical_attribute(
+		        eml_node,
+		        att_node,
+		        attribute_name,
+		        attribute_label,
+		        attribute_definition,
+		        storage_type,
+		        storage_type_system,
+		        standard_unit,
+		        custom_unit,
+		        custom_unit_definition,
+		        precision,
+		        number_type,
+		        bounds_minimum,
+		        bounds_minimum_exclusive,
+		        bounds_maximum,
+		        bounds_maximum_exclusive,
+		        code_dict,
+		        mscale)
 
-            create_numerical_attribute(
-                eml_node,
-                att_node,
-                attribute_name,
-                attribute_label,
-                attribute_definition,
-                storage_type,
-                storage_type_system,
-                standard_unit,
-                custom_unit,
-                custom_unit_definition,
-                precision,
-                number_type,
-                bounds_minimum,
-                bounds_minimum_exclusive,
-                bounds_maximum,
-                bounds_maximum_exclusive,
-                code_dict,
-                mscale)
+		    if node_id and len(node_id) != 1:
+		        old_att_node = Node.get_node_instance(att_node_id)
+		        if old_att_node:
+		            att_parent_node = old_att_node.parent
+		            att_parent_node.replace_child(old_att_node, att_node)
+		        else:
+		            msg = f"No node found in the node store with node id {node_id}"
+		            raise Exception(msg)
+		    else:
+		        add_child(attribute_list_node, att_node)
 
-            if node_id and len(node_id) != 1:
-                old_att_node = Node.get_node_instance(att_node_id)
-                if old_att_node:
-                    att_parent_node = old_att_node.parent
-                    att_parent_node.replace_child(old_att_node, att_node)
-                else:
-                    msg = f"No node found in the node store with node id {node_id}"
-                    raise Exception(msg)
-            else:
-                add_child(attribute_list_node, att_node)
+		    save_both_formats(filename=filename, eml_node=eml_node)
+		    att_node_id = att_node.id
+		"""
+		url = url_for(next_page, filename=filename,
+		              dt_node_id=dt_node_id, node_id=att_node_id)
+		"""
+		#return redirect(url)
+		return redirect(url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, initial_upload=True))
 
-            save_both_formats(filename=filename, eml_node=eml_node)
-            att_node_id = att_node.id
+	# Process GET
+	attribute_name = ''
+	if node_id == '1':
+		form.init_md5()
+		# form_str = mscale + form.init_str
+		# form.md5.data = hashlib.md5(form_str.encode('utf-8')).hexdigest()
+		# form.mscale_choice.data = mscale
+	else:
+		eml_node = load_eml(filename=filename)
+		dataset_node = eml_node.find_child(names.DATASET)
+		if dataset_node:
+		    dt_nodes = dataset_node.find_all_children(names.DATATABLE)
+		    if dt_nodes:
+		        for dt_node in dt_nodes:
+		            if dt_node_id == dt_node.id:
+		                attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+		                if attribute_list_node:
+		                    att_nodes = attribute_list_node.find_all_children(names.ATTRIBUTE)
+		                    if att_nodes:
+		                        for att_node in att_nodes:
+		                            if node_id == att_node.id:
+		                                populate_attribute_numerical_form(form, eml_node, att_node, mscale)
+		                                attribute_name = attribute_name_from_attribute(att_node)
+		                                break
 
-        url = url_for(next_page, filename=filename,
-                      dt_node_id=dt_node_id, node_id=att_node_id)
+	#views.set_current_page('data_table')
+	custom_unit_names = []
+	custom_unit_descriptions = []
+	if 'custom_units' in session:
+		for name, desc in session['custom_units'].items():
+		    custom_unit_names.append(name)
+		    custom_unit_descriptions.append(desc)
+	help = views.get_helps(['attribute_name', 'attribute_definition', 'attribute_label', 'attribute_storage_type',
+		              'attribute_number_type', 'attribute_numerical_precision'])
+	#NOTE changed from attribute_numerical.html ->> attribute_numerical_modal.html
 
-        return redirect(url)
+	action = f"/eml/attribute_numerical/{filename}/{dt_node_id}/{node_id}/{mscale}"
 
-    # Process GET
-    attribute_name = ''
-    if node_id == '1':
-        form.init_md5()
-        # form_str = mscale + form.init_str
-        # form.md5.data = hashlib.md5(form_str.encode('utf-8')).hexdigest()
-        # form.mscale_choice.data = mscale
-    else:
-        eml_node = load_eml(filename=filename)
-        dataset_node = eml_node.find_child(names.DATASET)
-        if dataset_node:
-            dt_nodes = dataset_node.find_all_children(names.DATATABLE)
-            if dt_nodes:
-                for dt_node in dt_nodes:
-                    if dt_node_id == dt_node.id:
-                        attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
-                        if attribute_list_node:
-                            att_nodes = attribute_list_node.find_all_children(names.ATTRIBUTE)
-                            if att_nodes:
-                                for att_node in att_nodes:
-                                    if node_id == att_node.id:
-                                        populate_attribute_numerical_form(form, eml_node, att_node, mscale)
-                                        attribute_name = attribute_name_from_attribute(att_node)
-                                        break
+	return render_template('attribute_numerical_modal.html',
+		                   title='Attribute: Numerical',
+		                   form=form,
+		                   attribute_name=attribute_name,
+		                   att_node_id=att_node_id,
+		                   mscale=mscale,
+		                   action=action,
+		                   custom_unit_names=custom_unit_names,
+		                   custom_unit_descriptions=custom_unit_descriptions,
+		                   help=help)
 
-    views.set_current_page('data_table')
-    custom_unit_names = []
-    custom_unit_descriptions = []
-    if 'custom_units' in session:
-        for name, desc in session['custom_units'].items():
-            custom_unit_names.append(name)
-            custom_unit_descriptions.append(desc)
-    help = views.get_helps(['attribute_name', 'attribute_definition', 'attribute_label', 'attribute_storage_type',
-                      'attribute_number_type', 'attribute_numerical_precision'])
-    return render_template('attribute_numerical.html',
-                           title='Attribute: Numerical',
-                           form=form,
-                           attribute_name=attribute_name,
-                           mscale=mscale,
-                           custom_unit_names=custom_unit_names,
-                           custom_unit_descriptions=custom_unit_descriptions,
-                           help=help)
+def attribute_numerical_save(filename=None, dt_node_id=None, node_id=None, mscale=None):
+	form = AttributeIntervalRatioForm(filename=filename, node_id=node_id)
+	att_node_id = node_id
 
+	if is_dirty_form(form):
+		dt_node = None
+		attribute_list_node = None
+		eml_node = load_eml(filename=filename)
+		dataset_node = eml_node.find_child(names.DATASET)
+		if not dataset_node:
+		    dataset_node = Node(names.DATASET, parent=eml_node)
+		else:
+		    data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
+		    if data_table_nodes:
+		        for data_table_node in data_table_nodes:
+		            if data_table_node.id == dt_node_id:
+		                dt_node = data_table_node
+		                break
+
+		if not dt_node:
+			dt_node = Node(names.DATATABLE, parent=dataset_node)
+			add_child(dataset_node, dt_node)
+
+		attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+		if not attribute_list_node:
+			attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
+			add_child(dt_node, attribute_list_node)
+
+		# mscale_choice = form.mscale_choice.data
+		attribute_name = form.attribute_name.data
+		attribute_label = form.attribute_label.data
+		attribute_definition = form.attribute_definition.data
+		storage_type = form.storage_type.data
+		storage_type_system = form.storage_type_system.data
+		standard_unit = form.standard_unit.data
+		custom_unit = form.custom_unit.data
+		custom_unit_definition = form.custom_unit_description.data
+		precision = form.precision.data
+		number_type = form.number_type.data
+		bounds_minimum = form.bounds_minimum.data
+		bounds_minimum_exclusive = form.bounds_minimum_exclusive.data
+		bounds_maximum = form.bounds_maximum.data
+		bounds_maximum_exclusive = form.bounds_maximum_exclusive.data
+
+		code_dict = {}
+
+		code_1 = form.code_1.data
+		code_explanation_1 = form.code_explanation_1.data
+		if code_1:
+			code_dict[code_1] = code_explanation_1
+
+		code_2 = form.code_2.data
+		code_explanation_2 = form.code_explanation_2.data
+		if code_2:
+			code_dict[code_2] = code_explanation_2
+
+		code_3 = form.code_3.data
+		code_explanation_3 = form.code_explanation_3.data
+		if code_3:
+			code_dict[code_3] = code_explanation_3
+
+		att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
+
+		create_numerical_attribute(
+			eml_node,
+			att_node,
+			attribute_name,
+			attribute_label,
+			attribute_definition,
+			storage_type,
+			storage_type_system,
+			standard_unit,
+			custom_unit,
+			custom_unit_definition,
+			precision,
+			number_type,
+			bounds_minimum,
+			bounds_minimum_exclusive,
+			bounds_maximum,
+			bounds_maximum_exclusive,
+			code_dict,
+			mscale)
+
+		if node_id and len(node_id) != 1:
+			old_att_node = Node.get_node_instance(att_node_id)
+			if old_att_node:
+				att_parent_node = old_att_node.parent
+				att_parent_node.replace_child(old_att_node, att_node)
+			else:
+				msg = f"No node found in the node store with node id {node_id}"
+				raise Exception(msg)
+		else:
+			add_child(attribute_list_node, att_node)
+
+		save_both_formats(filename=filename, eml_node=eml_node)
+		att_node_id = att_node.id
+	return att_node_id
 
 def populate_attribute_numerical_form(form: AttributeIntervalRatioForm = None, eml_node: Node = None, att_node: Node = None,
                                            mscale: str = None):
@@ -1234,186 +1908,305 @@ def attribute_text(filename: str = None, dt_node_id: str = None, node_id: str = 
 
 @dt_bp.route('/attribute_categorical/<filename>/<dt_node_id>/<node_id>/<mscale>', methods=['GET', 'POST'])
 def attribute_categorical(filename: str = None, dt_node_id: str = None, node_id: str = None, mscale: str = None):
+	if mscale == 'TEXT':
+		form = AttributeTextForm(filename=filename, node_id=node_id)
+	else:
+		form = AttributeCategoricalForm(filename=filename, node_id=node_id)
+	att_node_id = node_id
+
+	# Determine POST type
+	# if request.method == 'POST' or the page must be switchted to 'Codes':
+	if request.method == 'POST':
+
+		if is_dirty_form(form):
+			submit_type = 'Save Changes'
+			# flash(f"is_dirty_form: True")
+		else:
+			submit_type = 'Back'
+			# flash(f"is_dirty_form: False")
+
+		# Go back to data table or go to the appropriate measurement scale page
+		if BTN_DONE in request.form:
+			next_page = PAGE_ATTRIBUTE_SELECT  # FIXME
+		elif 'Codes' in request.form:
+			next_page = PAGE_CODE_DEFINITION_SELECT
+		elif BTN_HIDDEN_NEW in request.form:
+			next_page = PAGE_CREATE
+		elif BTN_HIDDEN_OPEN in request.form:
+			next_page = PAGE_OPEN
+		elif BTN_HIDDEN_CLOSE in request.form:
+			next_page = PAGE_CLOSE
+		#When submitting the form via attribute_categorical_modal.html:$('#codes-button').on('click')
+		#There is no indicating code
+		else:
+			next_page = PAGE_CODE_DEFINITION_SELECT
+
+		if submit_type == 'Save Changes':
+			dt_node = None
+			attribute_list_node = None
+			eml_node = load_eml(filename=filename)
+			dataset_node = eml_node.find_child(names.DATASET)
+			if not dataset_node:
+			    dataset_node = Node(names.DATASET, parent=eml_node)
+			else:
+			    data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
+			    if data_table_nodes:
+			        for data_table_node in data_table_nodes:
+			            if data_table_node.id == dt_node_id:
+			                dt_node = data_table_node
+			                break
+
+			if not dt_node:
+			    dt_node = Node(names.DATATABLE, parent=dataset_node)
+			    add_child(dataset_node, dt_node)
+
+			attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+			if not attribute_list_node:
+			    attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
+			    add_child(dt_node, attribute_list_node)
+
+			attribute_name = form.attribute_name.data
+			attribute_label = form.attribute_label.data
+			attribute_definition = form.attribute_definition.data
+			storage_type = form.storage_type.data
+			storage_type_system = form.storage_type_system.data
+			enumerated_domain_node = None
+			if mscale == VariableType.CATEGORICAL.name:
+			    # we need to hang onto the categorical codes
+			    att_node = Node.get_node_instance(att_node_id)
+			    if att_node:
+			        enumerated_domain_node = att_node.find_descendant(names.ENUMERATEDDOMAIN)
+
+			    enforced = form.enforced.data
+			else:
+			    enforced = None
+
+			code_dict = {}
+
+			code_1 = form.code_1.data
+			code_explanation_1 = form.code_explanation_1.data
+			if code_1:
+			    code_dict[code_1] = code_explanation_1
+
+			code_2 = form.code_2.data
+			code_explanation_2 = form.code_explanation_2.data
+			if code_2:
+			    code_dict[code_2] = code_explanation_2
+
+			code_3 = form.code_3.data
+			code_explanation_3 = form.code_explanation_3.data
+			if code_3:
+			    code_dict[code_3] = code_explanation_3
+
+			att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
+
+			create_categorical_or_text_attribute(
+			    att_node,
+			    attribute_name,
+			    attribute_label,
+			    attribute_definition,
+			    storage_type,
+			    storage_type_system,
+			    enforced,
+			    code_dict,
+			    mscale,
+			    enumerated_domain_node)
+
+			if node_id and len(node_id) != 1:
+			    old_att_node = Node.get_node_instance(att_node_id)
+			    if old_att_node:
+			        att_parent_node = old_att_node.parent
+			        att_parent_node.replace_child(old_att_node, att_node)
+			    else:
+			        msg = f"No node found in the node store with node id {node_id}"
+			        raise Exception(msg)
+			else:
+			    add_child(attribute_list_node, att_node)
+
+			save_both_formats(filename=filename, eml_node=eml_node)
+			att_node_id = att_node.id
+		"""
+		if next_page == PAGE_CODE_DEFINITION_SELECT:
+			cd_node = None
+			if att_node_id != '1':
+			    att_node = Node.get_node_instance(att_node_id)
+			    cd_node = code_definition_from_attribute(att_node)  # FIXME - What's going on here??? Only one node returned...
+
+			if not cd_node:
+			    cd_node = Node(names.CODEDEFINITION, parent=None)
+
+			cd_node_id = cd_node.id
+			
+			#This is a GET request, so this will tell code_definition_select to return a rendered template
+			#Returns rendered template
+			return code_definition_select(filename, dt_node_id, att_node_id, cd_node_id, mscale)
+			
+			#Previous call
+			#url = (PAGE_CODE_DEFINITION_SELECT, filename=filename, dt_node_id=dt_node_id, att_node_id=att_node_id,
+			#              node_id=cd_node_id, mscale=mscale)
+		else:
+		"""
+		#url = url_for(next_page, filename=filename, dt_node_id=dt_node_id, node_id=att_node_id)
+		
+		if next_page == PAGE_CODE_DEFINITION_SELECT:
+			#attribute_categorical_modal:$('#codes-button').on('click') will handle rendering the new template
+			#return newest att_node_id
+			return att_node_id
+			
+		#Reload Attribute Select Page with saved column info
+		url = url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, initial_upload=True)
+
+		return redirect(url)
+
+	# Process GET
+	attribute_name = ''
+	codes = 'No codes have been defined yet'
+	if node_id == '1':
+		form.init_md5()
+		# form_str = mscale + form.init_str
+		# form.md5.data = hashlib.md5(form_str.encode('utf-8')).hexdigest()
+		# form.mscale_choice.data = mscale
+	else:
+		eml_node = load_eml(filename=filename)
+		dataset_node = eml_node.find_child(names.DATASET)
+		if dataset_node:
+			dt_nodes = dataset_node.find_all_children(names.DATATABLE)
+			if dt_nodes:
+			    for dt_node in dt_nodes:
+			        if dt_node_id == dt_node.id:
+			            attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+			            if attribute_list_node:
+			                att_nodes = attribute_list_node.find_all_children(names.ATTRIBUTE)
+			                if att_nodes:
+			                    for att_node in att_nodes:
+			                        if node_id == att_node.id:
+			                            codes = populate_attribute_categorical_form(form, att_node, mscale)
+			                            attribute_name = attribute_name_from_attribute(att_node)
+			                            break
+
+	help = views.get_helps(['attribute_name', 'attribute_definition', 'attribute_label', 'attribute_storage_type'])
+	if mscale == VariableType.CATEGORICAL.name:
+
+		action = f"/eml/attribute_categorical/{filename}/{dt_node_id}/{node_id}/{mscale}"
+		
+		#NOTE this was changed from attribute_categorical.html ->> attribute_categorical_modal.html
+		return render_template('attribute_categorical_modal.html',
+			                   title='Categorical Attribute',
+			                   form=form,
+			                   attribute_name=attribute_name,
+			                   att_node_id=att_node_id,
+			                   mscale=mscale,
+			                   codes=codes,
+			                   action=action,
+			                   help=help)
+	else:
+		#NOTE this was changed from attribute_text.html ->> attribute_text_modal.html
+		
+		action = f"/eml/attribute_text/{filename}/{dt_node_id}/{node_id}/{mscale}"
+		
+		return render_template('attribute_text_modal.html',
+			                   title='Text Attribute',
+			                   form=form,
+			                   att_node_id=att_node_id,
+			                   attribute_name=attribute_name,
+			                   action=action,
+			                   mscale=mscale,
+			                   help=help)
+
+def attribute_categorical_save(filename: str = None, dt_node_id: str = None, node_id: str = None, mscale: str = None):
     if mscale == 'TEXT':
         form = AttributeTextForm(filename=filename, node_id=node_id)
     else:
         form = AttributeCategoricalForm(filename=filename, node_id=node_id)
+        
     att_node_id = node_id
+    if is_dirty_form(form):
+		    
+	    dt_node = None
+	    attribute_list_node = None
+	    eml_node = load_eml(filename=filename)
+	    dataset_node = eml_node.find_child(names.DATASET)
+	    
+	    if not dataset_node:
+	        dataset_node = Node(names.DATASET, parent=eml_node)
+	    else:
+	        data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
+	        if data_table_nodes:
+	            for data_table_node in data_table_nodes:
+	                if data_table_node.id == dt_node_id:
+	                    dt_node = data_table_node
+	                    break
 
-    if request.method == 'POST' and BTN_CANCEL in request.form:
-        url = url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, node_id=att_node_id)
-        return redirect(url)
+	    if not dt_node:
+	        dt_node = Node(names.DATATABLE, parent=dataset_node)
+	        add_child(dataset_node, dt_node)
 
-    # Determine POST type
-    # if request.method == 'POST' and form.validate_on_submit():
-    if request.method == 'POST':
+	    attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
+	    if not attribute_list_node:
+	        attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
+	        add_child(dt_node, attribute_list_node)
 
-        if is_dirty_form(form):
-            submit_type = 'Save Changes'
-            # flash(f"is_dirty_form: True")
-        else:
-            submit_type = 'Back'
-            # flash(f"is_dirty_form: False")
+	    attribute_name = form.attribute_name.data
+	    attribute_label = form.attribute_label.data
+	    attribute_definition = form.attribute_definition.data
+	    storage_type = form.storage_type.data
+	    storage_type_system = form.storage_type_system.data
+	    enumerated_domain_node = None
+	    if mscale == VariableType.CATEGORICAL.name:
+	        # we need to hang onto the categorical codes
+	        att_node = Node.get_node_instance(att_node_id)
+	        if att_node:
+	            enumerated_domain_node = att_node.find_descendant(names.ENUMERATEDDOMAIN)
 
-        # Go back to data table or go to the appropriate measurement scale page
-        if BTN_DONE in request.form:
-            next_page = PAGE_ATTRIBUTE_SELECT  # FIXME
-        elif 'Codes' in request.form:
-            next_page = PAGE_CODE_DEFINITION_SELECT
-        elif BTN_HIDDEN_NEW in request.form:
-            next_page = PAGE_CREATE
-        elif BTN_HIDDEN_OPEN in request.form:
-            next_page = PAGE_OPEN
-        elif BTN_HIDDEN_CLOSE in request.form:
-            next_page = PAGE_CLOSE
+	        enforced = form.enforced.data
+	    else:
+	        enforced = None
 
-        if submit_type == 'Save Changes':
-            dt_node = None
-            attribute_list_node = None
-            eml_node = load_eml(filename=filename)
-            dataset_node = eml_node.find_child(names.DATASET)
-            if not dataset_node:
-                dataset_node = Node(names.DATASET, parent=eml_node)
-            else:
-                data_table_nodes = dataset_node.find_all_children(names.DATATABLE)
-                if data_table_nodes:
-                    for data_table_node in data_table_nodes:
-                        if data_table_node.id == dt_node_id:
-                            dt_node = data_table_node
-                            break
+	    code_dict = {}
 
-            if not dt_node:
-                dt_node = Node(names.DATATABLE, parent=dataset_node)
-                add_child(dataset_node, dt_node)
+	    code_1 = form.code_1.data
+	    code_explanation_1 = form.code_explanation_1.data
+	    if code_1:
+	        code_dict[code_1] = code_explanation_1
 
-            attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
-            if not attribute_list_node:
-                attribute_list_node = Node(names.ATTRIBUTELIST, parent=dt_node)
-                add_child(dt_node, attribute_list_node)
+	    code_2 = form.code_2.data
+	    code_explanation_2 = form.code_explanation_2.data
+	    if code_2:
+	        code_dict[code_2] = code_explanation_2
 
-            attribute_name = form.attribute_name.data
-            attribute_label = form.attribute_label.data
-            attribute_definition = form.attribute_definition.data
-            storage_type = form.storage_type.data
-            storage_type_system = form.storage_type_system.data
-            enumerated_domain_node = None
-            if mscale == VariableType.CATEGORICAL.name:
-                # we need to hang onto the categorical codes
-                att_node = Node.get_node_instance(att_node_id)
-                if att_node:
-                    enumerated_domain_node = att_node.find_descendant(names.ENUMERATEDDOMAIN)
+	    code_3 = form.code_3.data
+	    code_explanation_3 = form.code_explanation_3.data
+	    if code_3:
+	        code_dict[code_3] = code_explanation_3
 
-                enforced = form.enforced.data
-            else:
-                enforced = None
+	    att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
 
-            code_dict = {}
+	    create_categorical_or_text_attribute(
+	        att_node,
+	        attribute_name,
+	        attribute_label,
+	        attribute_definition,
+	        storage_type,
+	        storage_type_system,
+	        enforced,
+	        code_dict,
+	        mscale,
+	        enumerated_domain_node)
 
-            code_1 = form.code_1.data
-            code_explanation_1 = form.code_explanation_1.data
-            if code_1:
-                code_dict[code_1] = code_explanation_1
+	    if node_id and len(node_id) != 1:
+	        old_att_node = Node.get_node_instance(att_node_id)
+	        if old_att_node:
+	            att_parent_node = old_att_node.parent
+	            att_parent_node.replace_child(old_att_node, att_node)
+	        else:
+	            msg = f"No node found in the node store with node id {node_id}"
+	            raise Exception(msg)
+	    else:
+	        add_child(attribute_list_node, att_node)
 
-            code_2 = form.code_2.data
-            code_explanation_2 = form.code_explanation_2.data
-            if code_2:
-                code_dict[code_2] = code_explanation_2
-
-            code_3 = form.code_3.data
-            code_explanation_3 = form.code_explanation_3.data
-            if code_3:
-                code_dict[code_3] = code_explanation_3
-
-            att_node = Node(names.ATTRIBUTE, parent=attribute_list_node)
-
-            create_categorical_or_text_attribute(
-                att_node,
-                attribute_name,
-                attribute_label,
-                attribute_definition,
-                storage_type,
-                storage_type_system,
-                enforced,
-                code_dict,
-                mscale,
-                enumerated_domain_node)
-
-            if node_id and len(node_id) != 1:
-                old_att_node = Node.get_node_instance(att_node_id)
-                if old_att_node:
-                    att_parent_node = old_att_node.parent
-                    att_parent_node.replace_child(old_att_node, att_node)
-                else:
-                    msg = f"No node found in the node store with node id {node_id}"
-                    raise Exception(msg)
-            else:
-                add_child(attribute_list_node, att_node)
-
-            save_both_formats(filename=filename, eml_node=eml_node)
-            att_node_id = att_node.id
-
-        if next_page == PAGE_CODE_DEFINITION_SELECT:
-            cd_node = None
-            if att_node_id != '1':
-                att_node = Node.get_node_instance(att_node_id)
-                cd_node = code_definition_from_attribute(att_node)  # FIXME - What's going on here??? Only one node returned...
-
-            if not cd_node:
-                cd_node = Node(names.CODEDEFINITION, parent=None)
-
-            cd_node_id = cd_node.id
-            url = url_for(next_page, filename=filename, dt_node_id=dt_node_id, att_node_id=att_node_id,
-                          node_id=cd_node_id, mscale=mscale)
-        else:
-            url = url_for(next_page, filename=filename, dt_node_id=dt_node_id, node_id=att_node_id)
-
-        return redirect(url)
-
-    # Process GET
-    attribute_name = ''
-    codes = 'No codes have been defined yet'
-    if node_id == '1':
-        form.init_md5()
-        # form_str = mscale + form.init_str
-        # form.md5.data = hashlib.md5(form_str.encode('utf-8')).hexdigest()
-        # form.mscale_choice.data = mscale
-    else:
-        eml_node = load_eml(filename=filename)
-        dataset_node = eml_node.find_child(names.DATASET)
-        if dataset_node:
-            dt_nodes = dataset_node.find_all_children(names.DATATABLE)
-            if dt_nodes:
-                for dt_node in dt_nodes:
-                    if dt_node_id == dt_node.id:
-                        attribute_list_node = dt_node.find_child(names.ATTRIBUTELIST)
-                        if attribute_list_node:
-                            att_nodes = attribute_list_node.find_all_children(names.ATTRIBUTE)
-                            if att_nodes:
-                                for att_node in att_nodes:
-                                    if node_id == att_node.id:
-                                        codes = populate_attribute_categorical_form(form, att_node, mscale)
-                                        attribute_name = attribute_name_from_attribute(att_node)
-                                        break
-
-    # if mscale
-    views.set_current_page('data_table')
-    help = views.get_helps(['attribute_name', 'attribute_definition', 'attribute_label', 'attribute_storage_type'])
-    if mscale == VariableType.CATEGORICAL.name:
-        return render_template('attribute_categorical.html',
-                               title='Categorical Attribute',
-                               form=form,
-                               attribute_name=attribute_name,
-                               mscale=mscale,
-                               codes=codes,
-                               help=help)
-    else:
-        return render_template('attribute_text.html',
-                               title='Text Attribute',
-                               form=form,
-                               attribute_name=attribute_name,
-                               mscale=mscale,
-                               help=help)
-
+	    save_both_formats(filename=filename, eml_node=eml_node)
+	    att_node_id = att_node.id
+    return att_node_id
 
 def populate_attribute_categorical_form(form: AttributeCategoricalForm, att_node: Node = None,
                                             mscale: str = None):
@@ -1505,47 +2298,114 @@ def populate_attribute_categorical_form(form: AttributeCategoricalForm, att_node
     form.md5.data = form_md5(form)
     return codes
 
+#Rewritten code_definition_select_post to work with the modal. This is done by being compatible to be called
+# from the attribute_modal_load function. The intention of this modal is to process and return the correct
+# rendered template to be inserted into the modal
+def code_definition_select_post_modal(filename=None, dt_node_id=None, att_node_id=None, node_id=None, mscale=None, load_codes=None):
+	nom_ord_node_id = node_id
+	form = CodeDefinitionSelectForm(filename=filename)
 
+
+	node_id = ''
+	new_page = ''
+
+	if not mscale:
+		att_node = Node.get_node_instance(att_node_id)
+	if att_node:
+		mscale = mscale_from_attribute(att_node)
+
+	#Go back to column
+	if load_codes == 'Back':
+		new_page = PAGE_ATTRIBUTE_CATEGORICAL
+	#Go to edit page for code
+	elif load_codes == 'Edit':
+		new_page = PAGE_CODE_DEFINITION
+	#Remove current code and re-render template
+	elif load_codes == 'Remove':
+		new_page = PAGE_CODE_DEFINITION_SELECT
+		eml_node = load_eml(filename=filename)
+		remove_child(node_id=node_id)
+		save_both_formats(filename=filename, eml_node=eml_node)
+	#Shift up code
+	elif load_codes == UP_ARROW:
+		new_page = PAGE_CODE_DEFINITION_SELECT
+		process_up_button(filename, node_id)
+	#Shift down code
+	elif load_codes == DOWN_ARROW:
+		new_page = PAGE_CODE_DEFINITION_SELECT
+		process_down_button(filename, node_id)
+	#Add new code
+	elif load_codes == 'Add':
+		new_page = PAGE_CODE_DEFINITION		
+		node_id = '1'
+		
+		
+	if form.validate_on_submit():
+
+		#Go back to column
+		if new_page == PAGE_ATTRIBUTE_CATEGORICAL:  # attribute_nominal_ordinal
+			 return attribute_modal_load(filename=filename,dt_node_id=dt_node_id,node_id=node_id,load_codes='False')
+		#Refresh Page
+		elif new_page == PAGE_CODE_DEFINITION_SELECT:  # code_definition_select_post
+			return attribute_modal_load(filename=filename,dt_node_id=dt_node_id,node_id=node_id,load_codes='True')
+		#Create or edit code
+		elif new_page == PAGE_CODE_DEFINITION:  # code_definition
+			return url_for(PAGE_CODE_DEFINITION,
+			               filename=filename,
+			               dt_node_id=dt_node_id,
+			               att_node_id=att_node_id,
+			               nom_ord_node_id=nom_ord_node_id,
+			               node_id=node_id,
+			               mscale=mscale)
+		#Other
+		else:
+			return url_for(new_page,
+				           filename=filename,
+				           dt_node_id=dt_node_id)
+			                   
 # <node_id> identifies the nominal or ordinal node that this code definition
 # is a part of
 #
 @dt_bp.route('/code_definition_select/<filename>/<dt_node_id>/<att_node_id>/<node_id>/<mscale>',
              methods=['GET', 'POST'])
 def code_definition_select(filename=None, dt_node_id=None, att_node_id=None, node_id=None, mscale=None):
-    nom_ord_node_id = node_id
-    form = CodeDefinitionSelectForm(filename=filename)
+	nom_ord_node_id = node_id
+	form = CodeDefinitionSelectForm(filename=filename)
 
-    # Process POST
-    if request.method == 'POST':
-        form_value = request.form
-        form_dict = form_value.to_dict(flat=False)
-        url = code_definition_select_post(filename=filename,
-                                          form=form,
-                                          form_dict=form_dict,
-                                          method='POST',
-                                          this_page=PAGE_CODE_DEFINITION_SELECT,
-                                          back_page=PAGE_ATTRIBUTE_CATEGORICAL,
-                                          edit_page=PAGE_CODE_DEFINITION,
-                                          dt_node_id=dt_node_id,
-                                          att_node_id=att_node_id,
-                                          nom_ord_node_id=nom_ord_node_id,
-                                          mscale=mscale)
-        return redirect(url)
+	# Process POST
+	if request.method == 'POST':
+		form_value = request.form
+		form_dict = form_value.to_dict(flat=False)
+		url = code_definition_select_post(filename=filename,
+		                                  form=form,
+		                                  form_dict=form_dict,
+		                                  method='POST',
+		                                  this_page=PAGE_CODE_DEFINITION_SELECT,
+		                                  back_page=PAGE_ATTRIBUTE_CATEGORICAL,
+		                                  edit_page=PAGE_CODE_DEFINITION,
+		                                  dt_node_id=dt_node_id,
+		                                  att_node_id=att_node_id,
+		                                  nom_ord_node_id=nom_ord_node_id,
+		                                  mscale=mscale)
+		return redirect(url)
 
-    # Process GET
-    codes_list = []
-    title = 'Code Definitions'
-    attribute_name = ''
-    load_eml(filename=filename)
+	# Process GET
+	codes_list = []
+	title = 'Code Definitions'
+	attribute_name = ''
+	load_eml(filename=filename)
 
-    att_node = Node.get_node_instance(att_node_id)
-    if att_node:
-        attribute_name = attribute_name_from_attribute(att_node)
-        codes_list = list_codes_and_definitions(att_node)
-    views.set_current_page('data_table')
-    return render_template('code_definition_select.html', title=title,
-                           attribute_name=attribute_name, codes_list=codes_list,
-                           form=form)
+	att_node = Node.get_node_instance(att_node_id)
+	if att_node:
+		attribute_name = attribute_name_from_attribute(att_node)
+		codes_list = list_codes_and_definitions(att_node)
+	#TODO this might not need to be removed if it doesn't impact the modal
+	#views.set_current_page('data_table')
+
+	#Changed from code_definition_select.html -> code_definition_select_modal.html
+	return render_template('code_definition_select_modal.html', title=title,
+		                   attribute_name=attribute_name, codes_list=codes_list,
+		                   form=form)
 
 
 def code_definition_select_post(filename=None,
@@ -1639,121 +2499,124 @@ def code_definition_select_post(filename=None,
 @dt_bp.route('/code_definition/<filename>/<dt_node_id>/<att_node_id>/<nom_ord_node_id>/<node_id>/<mscale>',
              methods=['GET', 'POST'])
 def code_definition(filename=None, dt_node_id=None, att_node_id=None, nom_ord_node_id=None, node_id=None, mscale=None):
-    eml_node = load_eml(filename=filename)
-    att_node = Node.get_node_instance(att_node_id)
-    cd_node_id = node_id
-    attribute_name = 'Attribute Name'
-    if att_node:
-        attribute_name = attribute_name_from_attribute(att_node)
-        if not mscale:
-            mscale = mscale_from_attribute(att_node)
-    form = CodeDefinitionForm(filename=filename, node_id=node_id, attribute_name=attribute_name)
+	eml_node = load_eml(filename=filename)
+	att_node = Node.get_node_instance(att_node_id)
+	cd_node_id = node_id
+	attribute_name = 'Attribute Name'
+	if att_node:
+		attribute_name = attribute_name_from_attribute(att_node)
+		if not mscale:
+		    mscale = mscale_from_attribute(att_node)
+	form = CodeDefinitionForm(filename=filename, node_id=node_id, attribute_name=attribute_name)
 
-    # Process POST
-    if request.method == 'POST' and BTN_CANCEL in request.form:
-        url = url_for(PAGE_CODE_DEFINITION_SELECT,
-                      filename=filename,
-                      dt_node_id=dt_node_id,
-                      att_node_id=att_node_id,
-                      node_id=nom_ord_node_id,
-                      mscale=mscale)
-        return redirect(url)
+	# Process POST
+	if request.method == 'POST' and BTN_CANCEL in request.form:
+		url = url_for(PAGE_CODE_DEFINITION_SELECT,
+		              filename=filename,
+		              dt_node_id=dt_node_id,
+		              att_node_id=att_node_id,
+		              node_id=nom_ord_node_id,
+		              mscale=mscale)
+		return redirect(url)
 
-    if request.method == 'POST' and form.validate_on_submit():
-        next_page = PAGE_CODE_DEFINITION_SELECT  # Save or Back sends us back to the list of attributes
+	if request.method == 'POST' and form.validate_on_submit():
+		next_page = PAGE_CODE_DEFINITION_SELECT  # Save or Back sends us back to the list of attributes
 
-        if BTN_HIDDEN_NEW in request.form:
-            next_page = PAGE_CREATE
-        elif BTN_HIDDEN_OPEN in request.form:
-            next_page = PAGE_OPEN
-        elif BTN_HIDDEN_CLOSE in request.form:
-            next_page = PAGE_CLOSE
+		if BTN_HIDDEN_NEW in request.form:
+		    next_page = PAGE_CREATE
+		elif BTN_HIDDEN_OPEN in request.form:
+		    next_page = PAGE_OPEN
+		elif BTN_HIDDEN_CLOSE in request.form:
+		    next_page = PAGE_CLOSE
 
-        # if 'Back' in request.form:
-        if is_dirty_form(form):
-            submit_type = 'Save Changes'
-        else:
-            submit_type = 'Back'
-        # flash(f'submit_type: {submit_type}')
+		# if 'Back' in request.form:
+		if is_dirty_form(form):
+		    submit_type = 'Save Changes'
+		else:
+		    submit_type = 'Back'
+		# flash(f'submit_type: {submit_type}')
 
-        if submit_type == 'Save Changes':
-            if att_node:
-                measurement_scale_node = att_node.find_child(names.MEASUREMENTSCALE)
-                if not measurement_scale_node:
-                    measurement_scale_node = Node(names.MEASUREMENTSCALE, parent=att_node)
-                    add_child(att_node, measurement_scale_node)
+		if submit_type == 'Save Changes':
+		    if att_node:
+		        measurement_scale_node = att_node.find_child(names.MEASUREMENTSCALE)
+		        if not measurement_scale_node:
+		            measurement_scale_node = Node(names.MEASUREMENTSCALE, parent=att_node)
+		            add_child(att_node, measurement_scale_node)
 
-                nominal_ordinal_node = measurement_scale_node.find_child(names.NOMINAL)
-                if not nominal_ordinal_node:
-                    nominal_ordinal_node = measurement_scale_node.find_child(names.ORDINAL)
-                    if not nominal_ordinal_node:
-                        if mscale == names.NOMINAL:
-                            nominal_ordinal_node = Node(names.NOMINAL, parent=measurement_scale_node)
-                            add_child(measurement_scale_node, nominal_ordinal_node)
-                        elif mscale == names.ORDINAL:
-                            nominal_ordinal_node = Node(names.ORDINAL, parent=measurement_scale_node)
-                            add_child(measurement_scale_node, nominal_ordinal_node)
+		        nominal_ordinal_node = measurement_scale_node.find_child(names.NOMINAL)
+		        if not nominal_ordinal_node:
+		            nominal_ordinal_node = measurement_scale_node.find_child(names.ORDINAL)
+		            if not nominal_ordinal_node:
+		                if mscale == names.NOMINAL:
+		                    nominal_ordinal_node = Node(names.NOMINAL, parent=measurement_scale_node)
+		                    add_child(measurement_scale_node, nominal_ordinal_node)
+		                elif mscale == names.ORDINAL:
+		                    nominal_ordinal_node = Node(names.ORDINAL, parent=measurement_scale_node)
+		                    add_child(measurement_scale_node, nominal_ordinal_node)
 
-                nnd_node = nominal_ordinal_node.find_child(names.NONNUMERICDOMAIN)
-                if not nnd_node:
-                    nnd_node = Node(names.NONNUMERICDOMAIN, parent=nominal_ordinal_node)
-                    add_child(nominal_ordinal_node, nnd_node)
+		        nnd_node = nominal_ordinal_node.find_child(names.NONNUMERICDOMAIN)
+		        if not nnd_node:
+		            nnd_node = Node(names.NONNUMERICDOMAIN, parent=nominal_ordinal_node)
+		            add_child(nominal_ordinal_node, nnd_node)
 
-                ed_node = nnd_node.find_child(names.ENUMERATEDDOMAIN)
-                if not ed_node:
-                    ed_node = Node(names.ENUMERATEDDOMAIN, parent=nnd_node)
-                    add_child(nnd_node, ed_node)
+		        ed_node = nnd_node.find_child(names.ENUMERATEDDOMAIN)
+		        if not ed_node:
+		            ed_node = Node(names.ENUMERATEDDOMAIN, parent=nnd_node)
+		            add_child(nnd_node, ed_node)
 
-                code = form.code.data
-                definition = form.definition.data
-                order = form.order.data
-                code_definition_node = Node(names.CODEDEFINITION, parent=ed_node)
-                create_code_definition(code_definition_node, code, definition, order)
+		        code = form.code.data
+		        definition = form.definition.data
+		        order = form.order.data
+		        code_definition_node = Node(names.CODEDEFINITION, parent=ed_node)
+		        create_code_definition(code_definition_node, code, definition, order)
 
-                # get rid of textDomain node, if any
-                text_domain_node = nnd_node.find_child(names.TEXTDOMAIN)
-                if text_domain_node:
-                    nnd_node.remove_child(text_domain_node)
+		        # get rid of textDomain node, if any
+		        text_domain_node = nnd_node.find_child(names.TEXTDOMAIN)
+		        if text_domain_node:
+		            nnd_node.remove_child(text_domain_node)
 
-                if cd_node_id and len(cd_node_id) != 1:
-                    old_code_definition_node = Node.get_node_instance(cd_node_id)
+		        if cd_node_id and len(cd_node_id) != 1:
+		            old_code_definition_node = Node.get_node_instance(cd_node_id)
 
-                    if old_code_definition_node:
-                        code_definition_parent_node = old_code_definition_node.parent
-                        code_definition_parent_node.replace_child(old_code_definition_node,
-                                                                  code_definition_node)
-                    else:
-                        msg = f"No codeDefinition node found in the node store with node id {node_id}"
-                        raise Exception(msg)
-                else:
-                    add_child(ed_node, code_definition_node)
-                    cd_node_id = code_definition_node.id
+		            if old_code_definition_node:
+		                code_definition_parent_node = old_code_definition_node.parent
+		                code_definition_parent_node.replace_child(old_code_definition_node,
+		                                                          code_definition_node)
+		            else:
+		                msg = f"No codeDefinition node found in the node store with node id {node_id}"
+		                raise Exception(msg)
+		        else:
+		            add_child(ed_node, code_definition_node)
+		            cd_node_id = code_definition_node.id
 
-                save_both_formats(filename=filename, eml_node=eml_node)
+		        save_both_formats(filename=filename, eml_node=eml_node)
 
-        url = url_for(next_page,
-                      filename=filename,
-                      dt_node_id=dt_node_id,
-                      att_node_id=att_node_id,
-                      node_id=nom_ord_node_id,
-                      mscale=mscale)
-        return redirect(url)
+		url = url_for(next_page,
+		              filename=filename,
+		              dt_node_id=dt_node_id,
+		              att_node_id=att_node_id,
+		              node_id=nom_ord_node_id,
+		              mscale=mscale)
+		return redirect(url)
 
-    # Process GET
-    if node_id == '1':
-        form.init_md5()
-    else:
-        enumerated_domain_node = enumerated_domain_from_attribute(att_node)  # FIXME - Question: schema allows multiple of these
-        if enumerated_domain_node:
-            cd_nodes = enumerated_domain_node.find_all_children(names.CODEDEFINITION)
-            if cd_nodes:
-                for cd_node in cd_nodes:
-                    if node_id == cd_node.id:
-                        populate_code_definition_form(form, cd_node)
-                        break
+	# Process GET
+	if node_id == '1':
+		form.init_md5()
+	else:
+		enumerated_domain_node = enumerated_domain_from_attribute(att_node)  # FIXME - Question: schema allows multiple of these
+		if enumerated_domain_node:
+		    cd_nodes = enumerated_domain_node.find_all_children(names.CODEDEFINITION)
+		    if cd_nodes:
+		        for cd_node in cd_nodes:
+		            if node_id == cd_node.id:
+		                populate_code_definition_form(form, cd_node)
+		                break
 
-    views.set_current_page('data_table')
-    return render_template('code_definition.html', title='Code Definition', form=form, attribute_name=attribute_name)
+	#views.set_current_page('data_table')
+	#Old
+	#return render_template('code_definition.html', title='Code Definition', form=form, attribute_name=attribute_name)
+	#New: changed code_definition.html -> code_definition_modal.html
+	return render_template('code_definition_modal.html', title='Code Definition', form=form, attribute_name=attribute_name)
 
 
 def populate_code_definition_form(form: CodeDefinitionForm, cd_node: Node):

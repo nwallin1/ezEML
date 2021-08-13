@@ -1,0 +1,148 @@
+{% import 'bootstrap/wtf.html' as wtf %}
+{% import '_macros.html' as macros %}
+
+{% block app_content %}
+    {% set help_attribute_name_id, help_attribute_name_title, help_attribute_name_content = help[0] %}
+    {% set help_attribute_name_btn = help_attribute_name_id ~ '_btn' %}
+    {% set help_attribute_name_dialog = help_attribute_name_id ~ '_dialog' %}
+    {% set help_attribute_definition_id, help_attribute_definition_title, help_attribute_definition_content = help[1] %}
+    {% set help_attribute_definition_btn = help_attribute_definition_id ~ '_btn' %}
+    {% set help_attribute_definition_dialog = help_attribute_definition_id ~ '_dialog' %}
+    {% set help_attribute_label_id, help_attribute_label_title, help_attribute_label_content = help[2] %}
+    {% set help_attribute_label_btn = help_attribute_label_id ~ '_btn' %}
+    {% set help_attribute_label_dialog = help_attribute_label_id ~ '_dialog' %}
+    {% set help_attribute_storage_type_id, help_attribute_storage_type_title, help_attribute_storage_type_content = help[3] %}
+    {% set help_attribute_storage_type_btn = help_attribute_storage_type_id ~ '_btn' %}
+    {% set help_attribute_storage_type_dialog = help_attribute_storage_type_id ~ '_dialog' %}
+	
+	<label for="{{att_node_id}}">Change Column Type: </label>
+	{# changeMeasurementScale(...) is a function located in the file attribute_select_initial_upload.html #}
+	<select name="{{att_node_id}}" id="mscale-list" onchange="changeMeasurementScale('{{ mscale }}')">
+		<option value="NUMERICAL">Numerical</option>
+		<option value="CATEGORICAL" selected>Categorical</option>
+		<option value="DATETIME">DateTime</option>
+		<option value="TEXT">Text</option>
+	</select>
+	<hr>
+
+    <h2>Categorical Column</h2>
+    <div class="row">
+        <div class="col-md-10">
+            <form method="POST" action="{{ action }}" class="form modal-form" role="form">
+                {{ form.csrf_token }}
+                {{ macros.item_start() }}{{ wtf.form_field(form.attribute_name) }}{{ macros.item_end(help_attribute_name_btn) }}
+                {{ macros.item_start() }}{{ wtf.form_field(form.attribute_definition) }}{{ macros.item_end(help_attribute_definition_btn) }}
+                {{ macros.item_start() }}{{ wtf.form_field(form.attribute_label) }}{{ macros.item_end(help_attribute_label_btn) }}
+                <label class="control-label">Define coded values and their definitions:</label>
+                <table style="border: 1px solid steelblue;border-collapse: collapse;padding: 10px 20px;" width="100%">
+                    <tr>
+                        <td style="padding: 10px 25px 0px;" width="100%"><label class="control-label">Codes:&nbsp;&nbsp;</label>{{ codes }}</td>
+                    </tr>
+                    <tr>
+                    <td><table>
+                    <td style="padding: 0px 20px;">
+						{# <input class="btn btn-primary" name="Codes" type="submit" value="Edit Codes and Definitions"/> #}
+						<button class="btn btn-primary" type="button" id="codes-button">Edit Codes and Definitions</button>
+					</td>
+                    <td width="5%">&nbsp;</td>
+                    <td style="padding-bottom: 5px;">{{ wtf.form_field(form.enforced) }}</td>
+                    </table></td>
+                    </tr>
+                </table>
+                <p>&nbsp;</p>
+                <label class="control-label">Optionally, enter up to 3 missing value codes with accompanying explanations:</label>
+                <table style="border: 1px solid steelblue;border-collapse: collapse;padding: 10px 20px;" width="100%">
+                    <tr>
+                    <td style="border: 1px solid steelblue;border-collapse: collapse;padding: 15px 20px 1px;">
+                    <table width="100%">
+                    <tr>
+                    <td width="38%">{{ wtf.form_field(form.code_1) }}</td>
+                    <td width="4%">&nbsp;</td>
+                    <td width="58%" style="padding-bottom: 5px;">{{ wtf.form_field(form.code_explanation_1) }}</td>
+                    </tr>
+                    <tr>
+                    <td>{{ wtf.form_field(form.code_2) }}</td>
+                    <td width="5%">&nbsp;</td>
+                    <td style="padding-bottom: 5px;">{{ wtf.form_field(form.code_explanation_2) }}</td>
+                    </tr>
+                    <tr>
+                    <td>{{ wtf.form_field(form.code_3) }}</td>
+                    <td width="5%">&nbsp;</td>
+                    <td style="padding-bottom: 5px;">{{ wtf.form_field(form.code_explanation_3) }}</td>
+                    </tr>
+                    </table></td>
+                    </tr>
+                </table>
+                <br>
+                <table style="border: 1px solid steelblue;border-collapse: collapse;padding: 10px 20px;" width="100%">
+                    <tr>
+                    <td style="padding: 10px 15px 10px 20px;" width="42%">{{ wtf.form_field(form.storage_type) }}</td>
+                    <td style="padding: 10px 20px 10px 15px;" width="58%" style="padding-bottom: 5px;">
+                        {{ macros.item_start() }}{{ wtf.form_field(form.storage_type_system) }}{{ macros.item_end(help_attribute_storage_type_btn) }}
+                    </td>
+
+                    </tr>
+                </table>
+                <p>&nbsp;</p>
+                <input class="btn btn-primary" name="OK" type="submit" value="Save and Continue"/>
+                <input class="btn btn-primary" name="Cancel" type="submit" value="Cancel"/>
+                {{ macros.hidden_new_open_close_buttons() }}
+                {{ wtf.form_field(form.md5) }}
+                {{ wtf.form_field(form.mscale) }}
+            </form>
+        </div>
+    </div>
+    {{ macros.help_dialog(help_attribute_name_dialog, help_attribute_name_title, help_attribute_name_content) }}
+    {{ macros.help_dialog(help_attribute_definition_dialog, help_attribute_definition_title, help_attribute_definition_content) }}
+    {{ macros.help_dialog(help_attribute_label_dialog, help_attribute_label_title, help_attribute_label_content) }}
+    {{ macros.help_dialog(help_attribute_storage_type_dialog, help_attribute_storage_type_title, help_attribute_storage_type_content) }}
+{% endblock %}
+
+
+{% block app_scripts %}
+    {% set help_attribute_name_id, help_attribute_name_title, help_attribute_name_content = help[0] %}
+    {% set help_attribute_name_btn = help_attribute_name_id ~ '_btn' %}
+    {% set help_attribute_name_dialog = help_attribute_name_id ~ '_dialog' %}
+    {% set help_attribute_definition_id, help_attribute_definition_title, help_attribute_definition_content = help[1] %}
+    {% set help_attribute_definition_btn = help_attribute_definition_id ~ '_btn' %}
+    {% set help_attribute_definition_dialog = help_attribute_definition_id ~ '_dialog' %}
+    {% set help_attribute_label_id, help_attribute_label_title, help_attribute_label_content = help[2] %}
+    {% set help_attribute_label_btn = help_attribute_label_id ~ '_btn' %}
+    {% set help_attribute_label_dialog = help_attribute_label_id ~ '_dialog' %}
+    {% set help_attribute_storage_type_id, help_attribute_storage_type_title, help_attribute_storage_type_content = help[3] %}
+    {% set help_attribute_storage_type_btn = help_attribute_storage_type_id ~ '_btn' %}
+    {% set help_attribute_storage_type_dialog = help_attribute_storage_type_id ~ '_dialog' %}
+    <script>
+    $(function()
+    {
+        {{ macros.help_script(help_attribute_name_dialog, help_attribute_name_btn) }}
+        {{ macros.help_script(help_attribute_definition_dialog, help_attribute_definition_btn) }}
+        {{ macros.help_script(help_attribute_label_dialog, help_attribute_label_btn) }}
+        {{ macros.help_script(help_attribute_storage_type_dialog, help_attribute_storage_type_btn) }}
+        
+        
+        
+    });
+    
+    $('#codes-button').on('click', function(e){
+    						
+		e.preventDefault();
+							
+		//Make POST request to attribute_categorical to save any changes in the form
+		$.ajax('{{ action }}',
+			{
+				type: "POST",
+				dataType: "html",
+				data: $('.modal-form').serialize(),
+				error: function(r){console.log("AJAX Error");console.log(r);},
+				success: function(att_node_id){
+					
+					//Fetch and set new template, for codes screen
+					attribute_modal_load(att_node_id, codes='True');
+				}
+			}
+		); //end AJAX 					
+	});
+    
+    </script>
+{% endblock %}

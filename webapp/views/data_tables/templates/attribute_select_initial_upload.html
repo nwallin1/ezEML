@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% import 'bootstrap/wtf.html' as wtf %}
+
+{% block app_content %}
+    {% if help %}
+    {% set help_measurement_scale_id, help_measurement_scale_title, help_measurement_scale_content = help[0] %}
+    {% set help_measurement_scale_btn = help_measurement_scale_id ~ '_btn' %}
+    {% set help_measurement_scale_dialog = help_measurement_scale_id ~ '_dialog' %}
+    {% endif %}
+
+	<table>
+        <td><h2>Step 2: Column Details</h2></td>
+    </table>
+    <h2>Columns of <i>{{ entity_name }}</i></h2>
+{#    <div class="row">#}
+        <div class="col-md-12">
+            <form method="POST" action="" class="form" role="form">
+                {{ form.csrf_token }}
+                <table class="table table-striped">
+                    <tr>
+                        <th width="5%">Col&nbsp;#</th>
+                        <th width="30%">Column Name</th>
+                        <th width="15%">Type&nbsp;{{ macros.help_button(help_measurement_scale_btn) }}</th>
+{#                        <th>Measurement<br>Scale</th>#}
+                        <th colspan="3"></th>
+                    </tr>
+                    {% for att_entry in att_list %}
+                    <tr>
+                        <td width="5%">{{ att_entry.column_number }}</td>
+                        <td width="30%">{{ att_entry.label }}</td>
+                        <td width="15%">{{ att_entry.mscale }}</td>
+                        {% if not was_uploaded %}
+                            {{ macros.up_down_arrow(att_entry.id, att_entry.upval) }}
+                            {{ macros.up_down_arrow(att_entry.id, att_entry.downval) }}
+                        {% endif %}
+                        <td width="45%">
+							<button type="button" class="btn btn-primary column-button" name="{{ att_entry.id }}" data-toggle="modal" data-target="#columns-modal">
+								Edit column
+							</button>
+                            {# <input class="btn btn-primary" name="{{ att_entry.id }}" type="submit" value="Edit Properties"/> #}
+                            {% if not was_uploaded %}
+                            <input class="btn btn-primary" name="{{ att_entry.id }}" type="submit" value="Remove"/>
+                            {% endif %}
+                            {# <input class="btn btn-primary" name="{{ att_entry.id }}" type="submit" value="Change Type"/></td> #}
+                    </tr>
+                    {% endfor %}
+                </table>
+                {% if not was_uploaded %}
+                    <br/>
+                    <input class="btn btn-primary" name="categorical" type="submit" value="Add Attribute - Categorical"/><br/><br/>
+                    <input class="btn btn-primary" name="numerical" type="submit" value="Add Attribute - Numerical"/><br/><br/>
+                    <input class="btn btn-primary" name="text" type="submit" value="Add Attribute - Text"/><br/><br/>
+                    <input class="btn btn-primary" name="dateTime" type="submit" value="Add Attribute - Datetime"/><br/><br/><br/>
+                {% endif %}
+                <input class="btn btn-primary" name="Back" type="submit" value="Save and Finish"/>
+                <p>&nbsp;</p>
+                {# {{ macros.hidden_buttons() }} #}
+            </form>
+        </div>
+	<div class="modal fade" id="columns-modal" tabindex="-1" role="dialog">
+	  <div class="modal-dialog modal-lg" role="document">
+	    <div class="modal-content">
+	      <div class="modal-header">
+		<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+		<h4 class="modal-title">Edit Columns</h4>
+	      </div>
+	      <div class="modal-body">
+		
+	      </div>
+	    </div><!-- /.modal-content -->
+	  </div><!-- /.modal-dialog -->
+	</div>
+{#    </div>#}
+    {{ macros.help_dialog(help_measurement_scale_dialog, help_measurement_scale_title, help_measurement_scale_content) }}
+{% endblock %}
+
+{% block app_scripts %}
+    {{ super() }}
+    {% if help %}
+    {% set help_measurement_scale_id, help_measurement_scale_title, help_measurement_scale_content = help[0] %}
+    {% set help_measurement_scale_btn = help_measurement_scale_id ~ '_btn' %}
+    {% set help_measurement_scale_dialog = help_measurement_scale_id ~ '_dialog' %}
+    {% endif %}
+
+    <script>
+	
+    $(function()
+    {
+        {{ macros.help_script(help_measurement_scale_dialog, help_measurement_scale_btn) }}
+    });
+
+	$(function()
+
+	{
+		$('.column-button').on('click', attribute_modal_load);
+	});
+
+
+	function attribute_modal_load(e, codes='False'){
+		/* GET request to dt.py:attribute_select_modal
+		 * $.ajax(url, [,settings])
+		 * 
+		 * Given filename, dt_node_id, and node_id, dt.py:attribute_select_modal returns a fully rendered
+		 * HTML template. This template is then set as HTML in the modal-body, replacing any existing HTML 
+		 * 
+		 * codes must be passed as a boolean argument as a check. This is because
+		 * attribute_modal_load determines which page to load based on the mscale, and when switching to the code page
+		 * the mscale is 'CATEGORICAL', so attribute_modal_load will just reload the CATEGORICAL template if codes is not passed in.
+		 */
+
+		let filename_ = '{{ filename }}';
+		let dt_node_id_ = '{{ dt_node_id }}';
+		let node_id_;
+		if(e.target !== undefined && e.target.name !== undefined){
+			node_id_ = e.target.name;
+		}else{
+			node_id_ = e;
+		}
+
+
+		
+		let url = `${window.location.origin}/eml/attribute_modal_load/${filename_}/${dt_node_id_}/${node_id_}/${codes}`;
+		$.ajax(url,
+			{
+				dataType: "html",
+				error: function(r){console.log("AJAX Error");console.log(r);},
+				success: function(HTML){
+
+					//Remove existing HTML in .modal-body, if any
+					$('.modal-body')[0].innerHTML = "";
+					
+					//.append new HTML
+					//.append will run any JS
+					$('.modal-body').append(HTML);
+				}
+				//success: function(r){$('.modal-body')[0].innerHTML = r;}
+			}
+		);
+				
+	}
+
+	//Called when a different measurement scale is selected from '#mscale-list'
+    	//Makes an AJAX call that will returned rendered HTML of the new mscale
+	function changeMeasurementScale(old_mscale)
+	{
+		let filename_,dt_node_id_,selectEl,new_mscale,url;
+		filename_ = '{{ filename }}';
+		dt_node_id_ = '{{ dt_node_id }}';
+		
+		selectEl = $("#mscale-list")[0];
+		new_mscale = selectEl.value;
+		att_node_id = selectEl.name;
+		
+		url = `${window.location.origin}/eml/attribute_modal_change_mscale/${filename_}/${dt_node_id_}/${att_node_id}/${old_mscale}/${new_mscale}`;
+		
+		
+		$.ajax(url,
+			{
+				type: "POST",
+				dataType: "html",
+				data: $('.modal-form').serialize(),
+				error: function(r){console.log("AJAX Error");console.log(r);},
+				success: function(r){
+					//$('.modal-body')[0].innerHTML = r;
+					//debugger;
+
+					//Fetch and Set new HTML template
+					//r is a att_node_id
+					attribute_modal_load(r);
+
+					//TODO on success update columns screen with new mscale name (Example: changing from numerical to categorical)
+					
+				}
+			}
+		) //end AJAX
+		
+		/* PREVIOUS AJAX REQUEST (GET REQUEST)
+		//Perform AJAX request to change column mscale. Request will return new rendered HTML template that will be set as the new modal-body
+		$.ajax(url,
+			{
+				dataType: "html",
+				error: function(r){debugger;console.log("AJAX Error");console.log(r);},
+				success: function(r){
+					$('.modal-body')[0].innerHTML = r;
+					debugger;
+					
+					//TODO on success update columns screen with new mscale name (Example: changing from numerical to categorical)
+					
+				}
+			}
+		) //end AJAX
+		
+		*/
+	}
+    </script>
+{% endblock %}

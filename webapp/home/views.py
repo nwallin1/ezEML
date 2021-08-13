@@ -1656,7 +1656,10 @@ def load_data(dt_node_id=None):
                     backup_metadata(filename=document)
 
                 save_both_formats(filename=document, eml_node=eml_node)
-                return redirect(url_for(PAGE_DATA_TABLE, filename=document, node_id=dt_node.id, delimiter=delimiter, quote_char=quote_char))
+
+                #Redirect to initial upload page for users to enter table information
+                return redirect(url_for(PAGE_DATA_TABLE_INITIAL_UPLOAD,filename=document, node_id=dt_node.id, delimiter=delimiter,quote_char=quote_char))
+                #return redirect(url_for(PAGE_DATA_TABLE, filename=document, node_id=dt_node.id, delimiter=delimiter, quote_char=quote_char))
             else:
                 flash(f'{filename} is not a supported data file type')
                 return redirect(request.url)
