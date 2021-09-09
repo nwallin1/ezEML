@@ -7,10 +7,17 @@
     {% set help_measurement_scale_btn = help_measurement_scale_id ~ '_btn' %}
     {% set help_measurement_scale_dialog = help_measurement_scale_id ~ '_dialog' %}
     {% endif %}
+
+	{% if initial_upload %}
+		<table>
+        	<td><h2>Step 2: Column Details</h2></td>
+    	</table>
+	{% endif %}
+	
     <h2>Columns of <i>{{ entity_name }}</i></h2>
 {#    <div class="row">#}
         <div class="col-md-12">
-            <form method="POST" action="" class="form" role="form">
+            <form method="POST" action="" class="form attribute-select-form" role="form">
                 {{ form.csrf_token }}
                 <table class="table table-striped">
                     <tr>
@@ -30,11 +37,12 @@
                             {{ macros.up_down_arrow(att_entry.id, att_entry.downval) }}
                         {% endif %}
                         <td width="45%">
-                            <input class="btn btn-primary" name="{{ att_entry.id }}" type="submit" value="Edit Properties"/>
+                            <button type="submit" class="btn btn-primary edit-column-btn" name="{{ att_entry.id }}" value="Edit Properties & Type" data-toggle="modal" data-target="#columns-modal">
+		Edit Properties & Type
+	</button>
                             {% if not was_uploaded %}
                             <input class="btn btn-primary" name="{{ att_entry.id }}" type="submit" value="Remove"/>
                             {% endif %}
-                            <input class="btn btn-primary" name="{{ att_entry.id }}" type="submit" value="Change Type"/></td>
                     </tr>
                     {% endfor %}
                 </table>
@@ -45,11 +53,32 @@
                     <input class="btn btn-primary" name="text" type="submit" value="Add Attribute - Text"/><br/><br/>
                     <input class="btn btn-primary" name="dateTime" type="submit" value="Add Attribute - Datetime"/><br/><br/><br/>
                 {% endif %}
+                
+                {% if initial_upload %}
+                <input class="btn btn-primary" name="Save" type="submit" value="Save and Finish"/>                
+                {% else %}
                 <input class="btn btn-primary" name="Back" type="submit" value="Back to Data Table"/>
+                {% endif %}
+                
                 <p>&nbsp;</p>
-                {{ macros.hidden_buttons() }}
+                {% if not initial_upload %}
+                	{{ macros.hidden_buttons() }}
+                {% endif %}
             </form>
         </div>
+        <div class="modal fade" id="columns-modal" tabindex="-1" role="dialog">
+	  <div class="modal-dialog modal-lg" role="document">
+	    <div class="modal-content">
+	      <div class="modal-header">
+		<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+		<h4 class="modal-title">Edit Columns</h4>
+	      </div>
+	      <div class="modal-body">
+		
+	      </div>
+	    </div><!-- /.modal-content -->
+	  </div><!-- /.modal-dialog -->
+	</div>
 {#    </div>#}
     {{ macros.help_dialog(help_measurement_scale_dialog, help_measurement_scale_title, help_measurement_scale_content) }}
 {% endblock %}
@@ -67,5 +96,207 @@
     {
         {{ macros.help_script(help_measurement_scale_dialog, help_measurement_scale_btn) }}
     });
+
+	$(function(){
+		//Add an event listener, that calls the attribute_select function whenever the .edit-column-btn is clicked		
+		$('.attribute-select-form').on('submit', (e) => {
+			//Stop form from being submitted
+			e.preventDefault();
+			//Pass form event to custom handler
+			attribute_select_post(e);
+			
+		});
+		
+		
+	});
+	
+	
+	/*
+	 * This function performs an AJAX 'GET' request to the provided URL
+	 * It is assumed that the URL will return properly rendered HTML.
+	 * This HTML is then set as the HTML in the modal-body, replacing any existing HTML
+	 *
+	 * Params:
+	 *	URL: a string to a python function route in dt.py
+	 *	     this route is expected to return a rendered HTML template
+	 *
+	 * Returns:
+	 *	No return value
+	 */
+	function fetch_and_set_new_modal_template(URL){
+		//AJAX 'GET' request
+		$.ajax(URL,
+			{
+				dataType: "html",
+				error: function(r){console.log("AJAX Error");console.log(r);},
+				success: function(HTML){
+
+					//Remove existing HTML in .modal-body, if any
+					$('.modal-body')[0].innerHTML = "";
+					
+					//.append new HTML
+					//.append will run any JS
+					$('.modal-body').append(HTML);
+				}
+			}
+		);
+	}
+	
+	/*
+	 * This function is triggered when the 'Edit Properties & Type' button is pressed.
+	 * It makes an AJAX 'POST' request to '/attribute_select/<filename>/<dt_node_id>/'
+	 * This AJAX request returns a URL, which will then be used by fetch_and_set_new_modal_template
+	 * to fetch and set a new rendered template into the modal
+	 * 
+	 *  Params:
+	 *	e : The 'click' event object from clicking on the button
+	 *
+	 *  Returns: 
+	 *	No return value
+	 */
+	function attribute_select_post(e){
+		/* POST request to dt.py:attribute_select
+		 * $.ajax(url, [,settings])
+		 */
+		 
+		let btn_name = e.originalEvent.submitter.name;
+		let btn_value = e.originalEvent.submitter.value;
+		
+		let csrf_name =  e.target.elements.csrf_token.name;
+		let csrf_value =  e.target.elements.csrf_token.value;
+		
+		let data_obj = {};
+		
+		data_obj[btn_name] = btn_value;
+		data_obj[csrf_name] = csrf_value;
+		
+		$.ajax(window.location.href,
+			{
+				type: 'POST',
+				data: data_obj,
+				//Data type returned from AJAX call
+				dataType: 'text',
+				error: function(r){console.log('AJAX Error');console.log(r);},
+				success: function(URL){
+					//If this is the 'Save and Continue' or the 'Back to Data Table' buttons, redirect to returned URL
+					if(e.originalEvent.submitter.name === 'Save' || e.originalEvent.submitter.name === 'Back'){
+						//Trigger redirect to next page
+						location.assign(location.origin + URL);
+					}else{
+						//Trigger replacement of existing modal template
+						fetch_and_set_new_modal_template(URL);
+					}
+					
+				}
+			}
+		);
+	}
+	
+	/*
+	 * This function is triggered when the attribute type is changed within the modal.
+	 * It makes an AJAX 'POST' request to '/attribute_measurement_scale/<filename>/<dt_node_id>/<node_id>/<mscale>/initial_upload/'
+	 * This AJAX request returns a URL, which will then be used by fetch_and_set_new_modal_template
+	 * to fetch and set a new rendered template into the modal
+	 * 
+	 *  Params:
+	 *	old_mscale : (String) -> the current mscale value. This will be changed to new_mscale in the function
+	 *
+	 *  Returns: 
+	 *	No return value
+	 */
+	function attribute_measurement_scale_post(old_mscale, new_att_id=undefined){
+		
+		let filename_,dt_node_id_,selectEl,new_mscale,initial_upload,url;
+		filename_ = '{{ filename }}';
+		dt_node_id_ = '{{ dt_node_id }}';
+		
+		selectEl = $("#mscale-list")[0];
+		new_mscale = selectEl.value;
+		att_node_id = selectEl.name;
+		
+		if(new_att_id !== undefined){
+			att_node_id = new_att_id;
+		}
+		initial_upload = '{{ initial_upload }}';
+		
+		url = `${window.location.origin}/eml/attribute_measurement_scale/${filename_}/${dt_node_id_}/${att_node_id}/${old_mscale}/${initial_upload}/`;
+		/* POST request to dt.py:attribute_measurement_scale
+		 * $.ajax(url, [,settings])
+		 */
+		 return $.ajax(url,
+			{
+				type: 'POST',
+				data: '',
+				//Data type returned from AJAX call
+				dataType: 'text',
+				error: function(r){console.log('AJAX Error');console.log(r);},
+			}
+		);
+	}
+		
+	//Called when a different measurement scale is selected from '#mscale-list'
+	function changeMeasurementScale(old_mscale)
+	{
+		//Save current form, returns partial URL
+		let url = $('.modal-form')[0].action;
+
+		//Get current att_node_id
+	        let old_att_id = $('#mscale-list')[0].name
+	        
+	       /* POST request to dt.py:$('.modal-form')[0].action
+		* $.ajax(url, [,settings])
+		*/ 				
+		$.ajax(url,
+			{
+				type: 'POST',
+				data: $('.modal-form').serialize(),
+				//Data type returned from AJAX call
+				dataType: 'text',
+				error: function(r){console.log('AJAX Error');console.log(r);}
+			}
+		).success(
+			function(partial_url){
+				//Replace old_att_id with new_att_id in the attribute_select HTML Template
+				let el, new_att_id;
+				new_att_id = partial_url.split('/')[3];
+
+				el = $(`.edit-column-btn[name~="${ old_att_id }"]`)[0];
+				el.name = new_att_id;
+				
+				//Change mscale
+				let rajax = attribute_measurement_scale_post(old_mscale, new_att_id);
+				rajax.success(function(){
+					//Load new template
+										
+					selectEl = $("#mscale-list")[0];
+					new_mscale = selectEl.value;
+					
+					att_node_id = selectEl.name;
+					let url_base;
+					if(new_mscale === 'CATEGORICAL' || new_mscale === 'TEXT'){
+						url_base = '/eml/attribute_categorical';
+						el.parentNode.previousElementSibling.innerHTML = "Categorical";
+					}else if(new_mscale === 'NUMERICAL'){
+						url_base = '/eml/attribute_numerical';
+						el.parentNode.previousElementSibling.innerHTML = "Numerical";
+					}else{
+						//DATETIME
+						url_base = '/eml/attribute_dateTime';
+						el.parentNode.previousElementSibling.innerHTML = "DateTime";
+					}
+					
+					//Construct URL of new_mscale
+					url = window.location.origin + url_base + partial_url;
+					
+					if(new_mscale !== 'DATETIME'){
+						url += '/' + new_mscale;
+					}
+					
+					//Fetch and set the template for the new_mscale
+					fetch_and_set_new_modal_template(url);
+				});					
+			}
+		);		
+	}
     </script>
 {% endblock %}

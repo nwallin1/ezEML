@@ -1657,8 +1657,10 @@ def load_data(dt_node_id=None):
 
                 save_both_formats(filename=document, eml_node=eml_node)
 
-                #Redirect to initial upload page for users to enter table information
+                #New: Redirect to initial upload page for users to enter table information, then continue to enter column information
                 return redirect(url_for(PAGE_DATA_TABLE_INITIAL_UPLOAD,filename=document, node_id=dt_node.id, delimiter=delimiter,quote_char=quote_char))
+
+		#Old: Redirected to default data table page
                 #return redirect(url_for(PAGE_DATA_TABLE, filename=document, node_id=dt_node.id, delimiter=delimiter, quote_char=quote_char))
             else:
                 flash(f'{filename} is not a supported data file type')

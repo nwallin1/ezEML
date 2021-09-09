@@ -41,8 +41,8 @@
                     <tr>
                     <td><table>
                     <td style="padding: 0px 20px;">
-						{# <input class="btn btn-primary" name="Codes" type="submit" value="Edit Codes and Definitions"/> #}
-						<button class="btn btn-primary" type="button" id="codes-button">Edit Codes and Definitions</button>
+						<input class="btn btn-primary" name="Codes" type="submit" value="Edit Codes and Definitions"/> 
+						{#<button class="btn btn-primary" type="button"  type="submit" id="codes-button">Edit Codes and Definitions</button>#}
 					</td>
                     <td width="5%">&nbsp;</td>
                     <td style="padding-bottom: 5px;">{{ wtf.form_field(form.enforced) }}</td>
@@ -124,25 +124,57 @@
         
     });
     
-    $('#codes-button').on('click', function(e){
-    						
-		e.preventDefault();
-							
+    $('.modal-form').on('submit', (e) => {
+		if(e.originalEvent.submitter.name !== "OK"){
+			//Stop form from being submitted
+			e.preventDefault();
+			
+			//Pass form event to custom handler
+			attribute_categorical_post(e);
+		}
+	});
+	
+	function attribute_categorical_post(e){
+	
+		let btn_value, btn_name, data_obj;
+		btn_name = encodeURI(e.originalEvent.submitter.name);
+		btn_value = encodeURI(e.originalEvent.submitter.value);
+		
+		data_obj = $('.modal-form').serialize();
+		data_obj += `&${btn_name}=${btn_value}`;
+		
 		//Make POST request to attribute_categorical to save any changes in the form
+		//Returns URL for codes page
 		$.ajax('{{ action }}',
 			{
 				type: "POST",
-				dataType: "html",
-				data: $('.modal-form').serialize(),
+				dataType: "text",
+				data: data_obj,
 				error: function(r){console.log("AJAX Error");console.log(r);},
-				success: function(att_node_id){
+				success: function(URL){
 					
 					//Fetch and set new template, for codes screen
-					attribute_modal_load(att_node_id, codes='True');
+					//OLD:
+					//attribute_modal_load(att_node_id, codes='True');
+					if(e.originalEvent.submitter.name === 'Codes'){
+						/* When the form is saved in dt.py:attribute_categorical, it creates a new att_node_id
+						 * this new att_node_id must replace the current att_node_id, which is done here
+						 */
+						el = $(`.edit-column-btn[name~="{{att_node_id}}"]`)[0];
+						
+						//Get new att_node_id from URL
+						let new_att_id = URL.split('/')[5];
+						
+						//Replace old att_node_id					
+						el.name = new_att_id;
+					}
+					
+					//NEW
+					fetch_and_set_new_modal_template(URL);
 				}
 			}
-		); //end AJAX 					
-	});
+		); //end AJAX 	
+	}
     
     </script>
 {% endblock %}

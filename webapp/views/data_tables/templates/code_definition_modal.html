@@ -5,7 +5,7 @@
     <h2>Code Definition for {{ attribute_name }}</h2>
     <div class="row">
         <div class="col-md-10">
-            <form method="POST" action="" class="form" role="form">
+            <form method="POST" action="" class="form modal-form" role="form">
                 {{ form.csrf_token }}
                 {{ wtf.form_field(form.md5) }}
                 <h5>Enter a code and its definition:</h5>
@@ -22,6 +22,46 @@
     </div>
 
 	<script>
-		//TODO add function that will trigger Save / Cancel
+		$('.modal-form').on('submit', function(e){
+			e.preventDefault();
+			
+			code_definition_post(e);
+		});
+		
+		/*
+		 * This function performs an AJAX 'POST' request to the dt.py:code_definition function
+		 * on success, the AJAX request returns a URL, which is then passed to a function that will
+		 * replace the current template in the modal with the template from the given URL
+		 * Params:
+		 *	e: the 'submit' event of the form. Contains information on which button was used to trigger the form submit
+		 *
+		 * Returns:
+		 *	No return value
+		 */
+		function code_definition_post(e){
+			let btn_value, btn_name, data_obj;
+			btn_name = encodeURI(e.originalEvent.submitter.name);
+			btn_value = encodeURI(e.originalEvent.submitter.value);
+			
+			data_obj = $('.modal-form').serialize();
+			data_obj += `&${btn_name}=${btn_value}`;
+			
+			/* POST request to dt.py:code_definition
+			 * $.ajax(url, [,settings])
+			 */
+			$.ajax('{{ action }}',
+				{
+					type: "POST",
+					dataType: "text",
+					data: data_obj,
+					error: function(r){console.log("AJAX Error");console.log(r);},
+					success: function(URL){
+						
+						//Fetch and set new template
+						fetch_and_set_new_modal_template(URL);
+					}
+				}
+			); //end AJAX 
+		}
 	</script>
 {% endblock %}

@@ -28,7 +28,7 @@
     <h2>Text Column</h2>
     <div class="row">
         <div class="col-md-10">
-            <form method="POST" action="{{ action }}" class="form" role="form">
+            <form method="POST" action="{{ action }}" class="form modal-form" role="form">
                 {{ form.csrf_token }}
                 {{ macros.item_start() }}{{ wtf.form_field(form.attribute_name) }}{{ macros.item_end(help_attribute_name_btn) }}
                 {{ macros.item_start() }}{{ wtf.form_field(form.attribute_definition) }}{{ macros.item_end(help_attribute_definition_btn) }}
