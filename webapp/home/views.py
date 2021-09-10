@@ -1688,8 +1688,12 @@ def load_data(filename=None):
                 delete_data_files(uploads_folder)
 
                 save_both_formats(filename=document, eml_node=eml_node)
-                return redirect(url_for(PAGE_DATA_TABLE, filename=document, dt_node_id=dt_node.id, delimiter=delimiter, quote_char=quote_char))
 
+                #New: Redirect to initial upload page for users to enter table information, then continue to enter column information
+                return redirect(url_for(PAGE_DATA_TABLE_INITIAL_UPLOAD,filename=document, node_id=dt_node.id, delimiter=delimiter,quote_char=quote_char))
+
+		#Old: Redirected to default data table page
+                #return redirect(url_for(PAGE_DATA_TABLE, filename=document, node_id=dt_node.id, delimiter=delimiter, quote_char=quote_char))
             else:
                 flash(f'{filename} is not a supported data file type')
                 return redirect(request.url)

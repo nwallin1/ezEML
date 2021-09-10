@@ -8,12 +8,9 @@
     {% set help_measurement_scale_dialog = help_measurement_scale_id ~ '_dialog' %}
     {% endif %}
 
-	{% if initial_upload %}
-		<table>
-        	<td><h2>Step 2: Column Details</h2></td>
-    	</table>
-	{% endif %}
-	
+	<table>
+        <td><h2>Step 2: Column Details</h2></td>
+    </table>
     <h2>Columns of <i>{{ entity_name }}</i></h2>
 {#    <div class="row">#}
         <div class="col-md-12">
@@ -37,9 +34,10 @@
                             {{ macros.up_down_arrow(att_entry.id, att_entry.downval) }}
                         {% endif %}
                         <td width="45%">
-                            <button type="submit" class="btn btn-primary edit-column-btn" name="{{ att_entry.id }}" value="Edit Properties & Type" data-toggle="modal" data-target="#columns-modal">
+	<button type="submit" class="btn btn-primary edit-column-btn" name="{{ att_entry.id }}" value="Edit Properties & Type" data-toggle="modal" data-target="#columns-modal">
 		Edit Properties & Type
 	</button>
+                            {# <input class="btn btn-primary" name="{{ att_entry.id }}" type="submit" value="Edit Properties & Type"/> #}
                             {% if not was_uploaded %}
                             <input class="btn btn-primary" name="{{ att_entry.id }}" type="submit" value="Remove"/>
                             {% endif %}
@@ -53,20 +51,12 @@
                     <input class="btn btn-primary" name="text" type="submit" value="Add Attribute - Text"/><br/><br/>
                     <input class="btn btn-primary" name="dateTime" type="submit" value="Add Attribute - Datetime"/><br/><br/><br/>
                 {% endif %}
-                
-                {% if initial_upload %}
-                <input class="btn btn-primary" name="Save" type="submit" value="Save and Finish"/>                
-                {% else %}
-                <input class="btn btn-primary" name="Back" type="submit" value="Back to Data Table"/>
-                {% endif %}
-                
+                <input class="btn btn-primary" name="Save" type="submit" value="Save and Finish"/>
                 <p>&nbsp;</p>
-                {% if not initial_upload %}
-                	{{ macros.hidden_buttons() }}
-                {% endif %}
+                {# {{ macros.hidden_buttons() }} #}
             </form>
         </div>
-        <div class="modal fade" id="columns-modal" tabindex="-1" role="dialog">
+	<div class="modal fade" id="columns-modal" tabindex="-1" role="dialog">
 	  <div class="modal-dialog modal-lg" role="document">
 	    <div class="modal-content">
 	      <div class="modal-header">
@@ -92,6 +82,7 @@
     {% endif %}
 
     <script>
+	
     $(function()
     {
         {{ macros.help_script(help_measurement_scale_dialog, help_measurement_scale_btn) }}
@@ -178,8 +169,7 @@
 				dataType: 'text',
 				error: function(r){console.log('AJAX Error');console.log(r);},
 				success: function(URL){
-					//If this is the 'Save and Continue' or the 'Back to Data Table' buttons, redirect to returned URL
-					if(e.originalEvent.submitter.name === 'Save' || e.originalEvent.submitter.name === 'Back'){
+					if(e.originalEvent.submitter.name === 'Save'){
 						//Trigger redirect to next page
 						location.assign(location.origin + URL);
 					}else{
