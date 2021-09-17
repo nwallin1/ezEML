@@ -13,7 +13,10 @@
         	<td><h2>Step 2: Column Details</h2></td>
     	</table>
 	{% endif %}
-	
+
+
+<input id="initial_upload_value" value="{{initial_upload}}" type="hidden"/>
+
     <h2>Columns of <i>{{ entity_name }}</i></h2>
 {#    <div class="row">#}
         <div class="col-md-12">
@@ -98,7 +101,7 @@
     });
 
 	$(function(){
-		//Add an event listener, that calls the attribute_select function whenever the .edit-column-btn is clicked		
+		//Add an event listener, that calls the attribute_select_post function whenever .attribute-select-form is submitted	
 		$('.attribute-select-form').on('submit', (e) => {
 			//Stop form from being submitted
 			e.preventDefault();
@@ -143,13 +146,14 @@
 	}
 	
 	/*
-	 * This function is triggered when the 'Edit Properties & Type' button is pressed.
+	 * This function is triggered when the '.attribute-select-form' is submitted.
+	 * There is an event listener on '.attribute-select-form' for the submit event type
 	 * It makes an AJAX 'POST' request to '/attribute_select/<filename>/<dt_node_id>/'
 	 * This AJAX request returns a URL, which will then be used by fetch_and_set_new_modal_template
 	 * to fetch and set a new rendered template into the modal
 	 * 
 	 *  Params:
-	 *	e : The 'click' event object from clicking on the button
+	 *	e : The 'submit' event object from submitting the form
 	 *
 	 *  Returns: 
 	 *	No return value
@@ -200,7 +204,9 @@
 	 * 
 	 *  Params:
 	 *	old_mscale : (String) -> the current mscale value. This will be changed to new_mscale in the function
-	 *
+	 *	new_att_id : [Optional] (String) -> If a form is dirty, then a new att_node_id is created which then must be passed
+	 *						to the function. By default it is assumed the form is not dirty, and the function checks
+	 *						this assumption
 	 *  Returns: 
 	 *	No return value
 	 */
@@ -213,12 +219,14 @@
 		selectEl = $("#mscale-list")[0];
 		new_mscale = selectEl.value;
 		att_node_id = selectEl.name;
-		
+
 		if(new_att_id !== undefined){
 			att_node_id = new_att_id;
 		}
 		initial_upload = '{{ initial_upload }}';
 		
+		let data_obj = $('.modal-form').serialize();
+		data_obj += `&mscale_choice=${new_mscale}`;
 		url = `${window.location.origin}/eml/attribute_measurement_scale/${filename_}/${dt_node_id_}/${att_node_id}/${old_mscale}/${initial_upload}/`;
 		/* POST request to dt.py:attribute_measurement_scale
 		 * $.ajax(url, [,settings])
@@ -226,15 +234,31 @@
 		 return $.ajax(url,
 			{
 				type: 'POST',
-				data: '',
+				data: data_obj,
 				//Data type returned from AJAX call
 				dataType: 'text',
 				error: function(r){console.log('AJAX Error');console.log(r);},
 			}
 		);
 	}
-		
-	//Called when a different measurement scale is selected from '#mscale-list'
+	
+	/*
+	 * Called when a different measurement scale is selected from '#mscale-list'
+	 * '#mscale-list' is found in the current modal template
+	 *	Example: For a CATEGORICAL mscale, you can find '#mscale-list' in the attribute_categorical_modal.html
+	 *
+	 * Takes the current mscale value, fetches the new_mscale value and performs all the proper steps to change a columns mscale
+	 *  (1) Save current form values, if necessary
+	 *  (2) POST request to attribute_ measurement_scale, to perform the mscale change
+	 *  (3) Refresh page with new template
+	 * 
+	 *  Params:
+	 *	old_mscale : (String) -> the current mscale value. This will be changed to the newly selected new_mscale value
+	 *
+	 *  Returns: 
+	 *	No return value
+	 */	
+	//
 	function changeMeasurementScale(old_mscale)
 	{
 		//Save current form, returns partial URL
@@ -243,6 +267,8 @@
 		//Get current att_node_id
 	        let old_att_id = $('#mscale-list')[0].name
 	        
+
+		//AJAX saves form values, returns url to be operated on in success function
 	       /* POST request to dt.py:$('.modal-form')[0].action
 		* $.ajax(url, [,settings])
 		*/ 				
@@ -262,20 +288,22 @@
 
 				el = $(`.edit-column-btn[name~="${ old_att_id }"]`)[0];
 				el.name = new_att_id;
-				
+
 				//Change mscale
 				let rajax = attribute_measurement_scale_post(old_mscale, new_att_id);
 				rajax.success(function(){
-					//Load new template
-										
+					//Load new template		
 					selectEl = $("#mscale-list")[0];
 					new_mscale = selectEl.value;
 					
 					att_node_id = selectEl.name;
 					let url_base;
-					if(new_mscale === 'CATEGORICAL' || new_mscale === 'TEXT'){
+					if(new_mscale === 'CATEGORICAL'){
 						url_base = '/eml/attribute_categorical';
 						el.parentNode.previousElementSibling.innerHTML = "Categorical";
+					}else if(new_mscale === 'TEXT'){
+						url_base = '/eml/attribute_text';
+						el.parentNode.previousElementSibling.innerHTML = "Text";
 					}else if(new_mscale === 'NUMERICAL'){
 						url_base = '/eml/attribute_numerical';
 						el.parentNode.previousElementSibling.innerHTML = "Numerical";
@@ -288,6 +316,7 @@
 					//Construct URL of new_mscale
 					url = window.location.origin + url_base + partial_url;
 					
+					//DATETIME does not use mscale
 					if(new_mscale !== 'DATETIME'){
 						url += '/' + new_mscale;
 					}
@@ -297,6 +326,72 @@
 				});					
 			}
 		);		
+	}
+
+	/*
+	 * This function is called whenever a form within the modal is submitted
+	 * it is a wrapper for the default form submission. This allows for extra
+	 * information to be appeneded to the form via Javascript, as well as
+	 * the the ability to use the return value from Python functions to fetch
+	 * and set new modal templates
+	 * 
+	 *  Params:
+	 *	e : (Event) -> the current mscale value. This will be changed to new_mscale in the function
+	 *	action : (String) -> The URL that will be used to make a POST request
+	 *			Example: For CATEGORICAL, action is /eml/attribute_categorical/<filename>/<dt_node_id>/<node_id>/<mscale>
+	 *  Returns: 
+	 *	No return value
+	 */
+	function attribute_modal_post(e, action){
+		let btn_value, btn_name, data_obj,initial_upload;
+		btn_name = encodeURI(e.originalEvent.submitter.name);
+		btn_value = encodeURI(e.originalEvent.submitter.value);
+		
+		//Form Data
+		data_obj = $('.modal-form').serialize();
+
+		//Add information on the button used to submit the form
+		data_obj += `&${btn_name}=${btn_value}`;
+		
+		//Get initial_upload value
+		initial_upload = $('#initial_upload_value')[0].value;
+		
+		//Set initial_upload value in form
+		data_obj += `&initial_upload=${initial_upload}`;
+
+		//Make POST request to attribute_categorical to save any changes in the form
+		//Returns URL for codes page
+		$.ajax(action,
+			{
+				type: "POST",
+				dataType: "text",
+				data: data_obj,
+				error: function(r){console.log("AJAX Error");console.log(r);},
+				success: function(URL){
+					//If saving the form, refresh the page
+					if(e.originalEvent.submitter.name === "OK"){
+						location.replace(URL);
+					}else{
+						//if codes screen
+						if(e.originalEvent.submitter.name === 'Codes'){
+							/* When the form is saved in dt.py:attribute_categorical, it creates a new att_node_id
+							 * this new att_node_id must replace the current att_node_id, which is done here
+							 */
+							el = $(`.edit-column-btn[name~="{{att_node_id}}"]`)[0];
+							
+							//Get new att_node_id from URL
+							let new_att_id = URL.split('/')[5];
+							
+							//Replace old att_node_id					
+							el.name = new_att_id;
+						}
+						
+						//Fetch and set new template
+						fetch_and_set_new_modal_template(URL);
+					}
+				}
+			}
+		); //end AJAX 	
 	}
     </script>
 {% endblock %}

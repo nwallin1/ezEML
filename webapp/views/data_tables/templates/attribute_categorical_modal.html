@@ -16,7 +16,7 @@
     {% set help_attribute_storage_type_dialog = help_attribute_storage_type_id ~ '_dialog' %}
 	
 	<label for="{{att_node_id}}">Change Column Type: </label>
-	{# changeMeasurementScale(...) is a function located in the file attribute_select_initial_upload.html #}
+	{# changeMeasurementScale(...) is a function located in the file attribute_select.html #}
 	<select name="{{att_node_id}}" id="mscale-list" onchange="changeMeasurementScale('{{ mscale }}')">
 		<option value="NUMERICAL">Numerical</option>
 		<option value="CATEGORICAL" selected>Categorical</option>
@@ -29,6 +29,7 @@
     <div class="row">
         <div class="col-md-10">
             <form method="POST" action="{{ action }}" class="form modal-form" role="form">
+            	
                 {{ form.csrf_token }}
                 {{ macros.item_start() }}{{ wtf.form_field(form.attribute_name) }}{{ macros.item_end(help_attribute_name_btn) }}
                 {{ macros.item_start() }}{{ wtf.form_field(form.attribute_definition) }}{{ macros.item_end(help_attribute_definition_btn) }}
@@ -124,57 +125,14 @@
         
     });
     
-    $('.modal-form').on('submit', (e) => {
-		if(e.originalEvent.submitter.name !== "OK"){
-			//Stop form from being submitted
-			e.preventDefault();
-			
-			//Pass form event to custom handler
-			attribute_categorical_post(e);
-		}
-	});
-	
-	function attribute_categorical_post(e){
-	
-		let btn_value, btn_name, data_obj;
-		btn_name = encodeURI(e.originalEvent.submitter.name);
-		btn_value = encodeURI(e.originalEvent.submitter.value);
+    $('.modal-form').on('submit', (e) => {   		
+		//Stop form from being submitted
+		e.preventDefault();
 		
-		data_obj = $('.modal-form').serialize();
-		data_obj += `&${btn_name}=${btn_value}`;
-		
-		//Make POST request to attribute_categorical to save any changes in the form
-		//Returns URL for codes page
-		$.ajax('{{ action }}',
-			{
-				type: "POST",
-				dataType: "text",
-				data: data_obj,
-				error: function(r){console.log("AJAX Error");console.log(r);},
-				success: function(URL){
-					
-					//Fetch and set new template, for codes screen
-					//OLD:
-					//attribute_modal_load(att_node_id, codes='True');
-					if(e.originalEvent.submitter.name === 'Codes'){
-						/* When the form is saved in dt.py:attribute_categorical, it creates a new att_node_id
-						 * this new att_node_id must replace the current att_node_id, which is done here
-						 */
-						el = $(`.edit-column-btn[name~="{{att_node_id}}"]`)[0];
-						
-						//Get new att_node_id from URL
-						let new_att_id = URL.split('/')[5];
-						
-						//Replace old att_node_id					
-						el.name = new_att_id;
-					}
-					
-					//NEW
-					fetch_and_set_new_modal_template(URL);
-				}
-			}
-		); //end AJAX 	
-	}
+		//Pass form event to custom handler
+		//Handler is located in attribute_select.html
+		attribute_modal_post(e, '{{action}}');
+    });
     
     </script>
 {% endblock %}

@@ -390,7 +390,6 @@ def data_table_initial_upload(filename=None, node_id=None, delimiter=None, quote
       
 		if next_page == PAGE_ATTRIBUTE_SELECT:
 			#Redirect to attribute_select with initial_upload='True'
-			#This will display the attribute_select_initial_upload.html template instead of the attribute_select.html template
 			return redirect(url_for(next_page, filename=filename, dt_node_id=dt_node_id, initial_upload=True))
 		else:
 		    return redirect(url_for(next_page,
@@ -538,7 +537,6 @@ def populate_data_table_form(form: DataTableForm, node: Node):
 @dt_bp.route('/attribute_select/<filename>/<dt_node_id>/', defaults={ 'initial_upload': False }, methods=['GET','POST'])
 @dt_bp.route('/attribute_select/<filename>/<dt_node_id>/<initial_upload>/', methods=['GET', 'POST'])
 def attribute_select(filename=None, dt_node_id=None, initial_upload=False):
-	
 	form = AttributeSelectForm(filename=filename)
 	# dt_node_id = request.args.get('dt_node_id')  # alternate way to get the id
 	
@@ -548,7 +546,7 @@ def attribute_select(filename=None, dt_node_id=None, initial_upload=False):
 		form_dict = form_value.to_dict(flat=False)
 		url = attribute_select_post(filename, form, form_dict,
 		                            'POST', PAGE_ATTRIBUTE_SELECT, PAGE_DATA_TABLE,
-		                            dt_node_id=dt_node_id)
+		                            dt_node_id=dt_node_id,initial_upload=initial_upload)
 		#New: return the url. In the javascript of attribute_select.html or attribute_select_initial_upload.html
 		#	  this url will be used to make an AJAX 'GET' request to the URL, which will return a rendered template.
 		#	  The rendered template will then be inserted into the modal on the page.
@@ -632,23 +630,22 @@ def attribute_select_get(filename=None, form=None, dt_node_id=None, initial_uplo
 @dt_bp.route('/attribute_measurement_scale/<filename>/<dt_node_id>/<node_id>/<mscale>/<initial_upload>/', methods=['GET','POST'])
 @dt_bp.route('/attribute_measurement_scale/<filename>/<dt_node_id>/<node_id>/<mscale>/',  defaults={'initial_upload' : False}, methods=['GET', 'POST'])
 def attribute_measurement_scale(filename=None, dt_node_id=None, node_id=None, mscale=None, initial_upload=False):
-	form = AttributeMeasurementScaleForm(filename=filename)
-	att_node_id = node_id
+        form = AttributeMeasurementScaleForm(filename=filename)
+        att_node_id = node_id
+        # Process POST
+        if request.method == 'POST':
+	        form_value = request.form
+	        form_dict = form_value.to_dict(flat=False)
+	        return attribute_measurement_scale_post(
+	            filename, form, form_dict, dt_node_id, att_node_id, mscale, initial_upload
+	        )
 
-	# Process POST
-	if request.method == 'POST':
-		form_value = request.form
-		form_dict = form_value.to_dict(flat=False)
-		return attribute_measurement_scale_post(
-		    filename, form, form_dict, dt_node_id, att_node_id, mscale, initial_upload
-		)
-
-	# Process GET
-	return attribute_measurement_scale_get(filename, form, att_node_id)
+        # Process GET
+        return attribute_measurement_scale_get(filename, form, att_node_id)
 
 
 def attribute_measurement_scale_post(filename, form, form_dict, dt_node_id, att_node_id, mscale, initial_upload):
-    if BTN_OK in form_dict and 'mscale_choice' in form_dict:
+    if 'mscale_choice' in form_dict:
         eml_node = load_eml(filename=filename)
         old_mscale = mscale
         new_mscale = form_dict['mscale_choice'][0]
@@ -706,6 +703,8 @@ def force_datetime_type(attribute_node):
     data_frame = load_df(attribute_node)
 
     column_name = attribute_node.find_child(names.ATTRIBUTENAME).content
+    import pdb
+    pdb.set_trace()
     return infer_datetime_format(data_frame[column_name][1])
 
 
@@ -788,7 +787,7 @@ def change_measurement_scale(att_node, old_mscale, new_mscale):
 
 def attribute_select_post(filename=None, form=None, form_dict=None,
                           method=None, this_page=None, back_page=None,
-                          dt_node_id=None):
+                          dt_node_id=None, initial_upload=None):
 	load_eml(filename)
 	node_id = ''
 	new_page = ''
@@ -873,6 +872,8 @@ def attribute_select_post(filename=None, form=None, form_dict=None,
 		        node_id = '1'
 
 	if form.validate_on_submit():
+		initial_upload = request.args.get('initial_upload')
+		
 		if new_page == back_page:
 		    url = url_for(new_page,
 		                   filename=filename,
@@ -882,7 +883,8 @@ def attribute_select_post(filename=None, form=None, form_dict=None,
 		    url = url_for(new_page,
 		                   filename=filename,
 		                   dt_node_id=dt_node_id,
-		                   node_id=node_id)
+		                   node_id=node_id,
+		                   initial_upload=initial_upload)
 		elif new_page in (
 		        PAGE_ATTRIBUTE_SELECT,
 		        PAGE_ATTRIBUTE_DATETIME,
@@ -896,7 +898,8 @@ def attribute_select_post(filename=None, form=None, form_dict=None,
 		                  filename=filename,
 		                  dt_node_id=dt_node_id,
 		                  node_id=node_id,
-		                  mscale=mscale)
+		                  mscale=mscale,
+		                  initial_upload=initial_upload)
 		else:
 		    # this_page
 		    url = url_for(new_page,
@@ -1017,8 +1020,12 @@ def attribute_dateTime(filename=None, dt_node_id=None, node_id=None):
 			att_node_id = att_node.id		
 		
 		if next_page == PAGE_ATTRIBUTE_SELECT:
-			url = url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, initial_upload=True)
-			return redirect(url)
+			#Reload Attribute Select Page with saved column info
+			initial_upload = False
+			if(request.form.get('initial_upload') == 'True'):
+				initial_upload = True
+				
+			url = url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, initial_upload=initial_upload)
 		elif next_page == '':
 			#Javascript triggered form submission
 			#Partial URL
@@ -1026,7 +1033,6 @@ def attribute_dateTime(filename=None, dt_node_id=None, node_id=None):
 		else:
 			url = url_for(next_page, filename=filename,
 					  dt_node_id=dt_node_id, node_id=att_node_id)
-		
 		
 		#return redirect(url)
 		return url
@@ -1356,8 +1362,12 @@ def attribute_numerical(filename=None, dt_node_id=None, node_id=None, mscale=Non
 		    att_node_id = att_node.id
 		
 		if next_page == PAGE_ATTRIBUTE_SELECT:
-			url = url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, initial_upload=True)
-			return redirect(url)
+			#Reload Attribute Select Page with saved column info
+			initial_upload = False
+			if(request.form.get('initial_upload') == 'True'):
+				initial_upload = True
+				
+			url = url_for(PAGE_ATTRIBUTE_SELECT, filename=filename, dt_node_id=dt_node_id, initial_upload=initial_upload)
 		elif next_page == '':
 			#Javascript triggered form submission
 			#Partial URL
@@ -1654,7 +1664,6 @@ def attribute_categorical(filename: str = None, dt_node_id: str = None, node_id:
 	att_node_id = node_id
 	
 	# Determine POST type
-	# if request.method == 'POST' or the page must be switchted to 'Codes':
 	if request.method == 'POST':
 
 		if is_dirty_form(form):
@@ -1776,8 +1785,13 @@ def attribute_categorical(filename: str = None, dt_node_id: str = None, node_id:
 		                  node_id=cd_node_id, mscale=mscale)
 		elif next_page == PAGE_ATTRIBUTE_SELECT:
 			#Reload Attribute Select Page with saved column info
-			url = url_for(next_page, filename=filename, dt_node_id=dt_node_id, initial_upload=True)
-			return redirect(url)
+			initial_upload = False
+			if(request.form.get('initial_upload') == 'True'):
+				initial_upload = True
+
+			url = url_for(next_page, filename=filename, dt_node_id=dt_node_id, initial_upload=initial_upload)
+
+			#return redirect(url)
 		elif next_page == '':
 			#Javascript triggered form submission
 			#Partial URL

@@ -22,7 +22,7 @@
     {% set help_attribute_numerical_precision_dialog = help_attribute_numerical_precision_id ~ '_dialog' %}
 
 	<label for="{{att_node_id}}">Change Column Type: </label>
-	{# changeMeasurementScale(...) is a function located in the file attribute_select_initial_upload.html #}
+	{# changeMeasurementScale(...) is a function located in the file attribute_select.html #}
 	<select name="{{att_node_id}}" id="mscale-list" onchange="changeMeasurementScale('{{ mscale }}')">
 		<option value="NUMERICAL" selected>Numerical</option>
 		<option value="CATEGORICAL">Categorical</option>
@@ -176,5 +176,14 @@
             }
         })
     });
+
+	$('.modal-form').on('submit', (e) => {   		
+		//Stop form from being submitted
+		e.preventDefault();
+		
+		//Pass form event to custom handler
+		//Handler is located in attribute_select.html
+		attribute_modal_post(e, '{{action}}');
+	});
     </script>
 {% endblock %}
